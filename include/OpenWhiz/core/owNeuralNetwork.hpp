@@ -295,6 +295,22 @@ public:
     EvaluationReport evaluatePerformance(const owTensor<float, 2>& input, const owTensor<float, 2>& target, float tolerance = 0.05f);
 
     /**
+     * @brief Evaluates the network's performance on the internal dataset's test set.
+     * @param tolerance Precision tolerance for accuracy calculation (default 0.5f).
+     * @return An EvaluationReport containing various metrics.
+     */
+    EvaluationReport evaluatePerformance(float tolerance = 0.5f);
+
+    /**
+     * @brief Performs a forward pass and returns the human-readable label for the prediction.
+     * Useful for classification tasks with categorical targets.
+     * @param input Input tensor [1, InputFeatures].
+     * @param targetVarIdx Which target variable to use (default 0).
+     * @return Label string.
+     */
+    std::string predictLabel(const owTensor<float, 2>& input, int targetVarIdx = 0);
+
+    /**
      * @brief Prints the contents of an EvaluationReport to standard output.
      * @param report The report to print.
      */

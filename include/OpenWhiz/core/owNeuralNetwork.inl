@@ -550,7 +550,11 @@ inline EvaluationReport owNeuralNetwork::evaluatePerformance(const owTensor<floa
             float p = pred(i, j), t = target(i, j), diff = p - t;
             mse += diff * diff;
             if (std::abs(t) > 1e-7f) mape += std::abs(diff / t);
-            if (std::abs(diff) > std::abs(t * tolerance)) rowCorrect = false;
+            
+            // Fix: If target is 0, use tolerance as an absolute threshold.
+            // Otherwise, use it as a percentage of the target.
+            float threshold = (std::abs(t) < 1e-7f) ? tolerance : std::abs(t * tolerance);
+            if (std::abs(diff) > threshold) rowCorrect = false;
         }
         if (rowCorrect) correct++;
     }
@@ -558,6 +562,20 @@ inline EvaluationReport owNeuralNetwork::evaluatePerformance(const owTensor<floa
     report.mape = (mape / (n * outDim)) * 100.0f;
     report.accuracy = (float)correct / n;
     return report;
+}
+
+inline EvaluationReport owNeuralNetwork::evaluatePerformance(float tolerance) {
+    if (!m_dataset) return EvaluationReport();
+    auto testIn = m_dataset->getTestInput();
+    auto testOut = m_dataset->getTestTarget();
+    return evaluatePerformance(testIn, testOut, tolerance);
+}
+
+inline std::string owNeuralNetwork::predictLabel(const owTensor<float, 2>& input, int targetVarIdx) {
+    auto pred = forward(input);
+    if (!m_dataset) return "";
+    int actualColIdx = m_dataset->getTargetColumnIndex(targetVarIdx);
+    return m_dataset->getLabelName(actualColIdx, pred(0, targetVarIdx));
 }
 
 inline owTensor<float, 2> owNeuralNetwork::forecast(int steps) {
