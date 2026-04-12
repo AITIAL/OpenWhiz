@@ -15,6 +15,7 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 
 # Add examples
 add_subdirectory(examples/airfoilExample)
+#add_subdirectory(examples/breastCancerExample)
 #add_subdirectory(examples/clusteringExample)
 #add_subdirectory(examples/anomalyDetectionExample)
 #add_subdirectory(examples/concatenateForecastingExample)
