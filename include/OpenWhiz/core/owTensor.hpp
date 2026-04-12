@@ -304,6 +304,21 @@ public:
     }
 
     /**
+     * @brief Sets values from a nested initializer list (for Rank 2 tensors).
+     * @param list Nested list {{r1c1, r1c2}, {r2c1, r2c2}}.
+     */
+    template<size_t R = Rank, typename std::enable_if<R == 2, int>::type = 0>
+    void setValues(std::initializer_list<std::initializer_list<T>> list) {
+        if (list.size() != m_shape[0]) throw std::runtime_error("Row count mismatch!");
+        size_t row = 0;
+        for (const auto& row_list : list) {
+            if (row_list.size() != m_shape[1]) throw std::runtime_error("Column count mismatch!");
+            std::copy(row_list.begin(), row_list.end(), m_data_ptr + row * m_shape[1]);
+            row++;
+        }
+    }
+
+    /**
      * @brief Populates the tensor with random values using a uniform distribution.
      * @tparam U For SFINAE arithmetic check.
      * @param min Minimum range.
