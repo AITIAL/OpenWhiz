@@ -14,7 +14,7 @@ inline owNeuralNetwork::owNeuralNetwork() {
     auto seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
     m_rng.seed(static_cast<unsigned int>(seed));
     m_dataset = std::make_shared<owDataset>();
-    m_optimizer = std::make_shared<owADAMOptimizer>(); // Default optimizer
+    m_optimizer = std::make_shared<owLBFGSOptimizer>(); // Default optimizer
     m_loss = std::make_shared<owMeanSquaredErrorLoss>(); // Default loss
 }
 
@@ -32,7 +32,7 @@ inline void owNeuralNetwork::addLayer(std::shared_ptr<owLayer> layer) {
 }
 
 inline std::shared_ptr<owOptimizer> owNeuralNetwork::getOptimizer() { 
-    if (!m_optimizer) m_optimizer = std::make_shared<owADAMOptimizer>();
+    if (!m_optimizer) m_optimizer = std::make_shared<owLBFGSOptimizer>();
     return m_optimizer; 
 }
 
@@ -478,7 +478,9 @@ inline void owNeuralNetwork::createNeuralNetwork(owProjectType type, const std::
         invNormLayer->setStatistics(min, max);
         addLayer(invNormLayer);
     } else if (type == owProjectType::CLASSIFICATION) {
-        addLayer(std::make_shared<owProbabilityLayer>());
+        if (targetSize > 1) {
+            addLayer(std::make_shared<owProbabilityLayer>());
+        }
     }
 }
 
