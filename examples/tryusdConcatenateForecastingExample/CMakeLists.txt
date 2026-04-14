@@ -1,0 +1,1 @@
+add_executable(tryusdConcatenateForecastingExample main.cpp)

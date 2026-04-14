@@ -50,7 +50,7 @@ For advanced users who require full control over the network topology.
 
 ## 💻 Quick Start (Forecasting Example)
 
-Since OpenWhiz is header-only, simply add the `include` folder to your project path. This example shows how to predict the next value in a time-series using the automated **FORECASTING** project type.
+Since OpenWhiz is header-only, simply add the `include` folder to your project path. This example shows how to predict the next value in a time-series using the automated **FORECASTING** project type and the new Data-Centric architecture.
 
 ```cpp
 #include "OpenWhiz/openwhiz.hpp"
@@ -59,28 +59,29 @@ Since OpenWhiz is header-only, simply add the `include` folder to your project p
 int main() {
     ow::owNeuralNetwork nn;
 
-    // 1. Setup Data
-    nn.loadData("dataset.csv"); 
+    // 1. Setup Data with In-Place Normalization
+    auto dataset = std::make_shared<ow::owDataset>();
+    dataset->loadFromCSV("dataset.csv", true, true); // true, true = has_header, autoNormalize
+    nn.setDataset(dataset);
 
-    // 2. Build Architecture via Project Type
-    // Automatically adds: Sliding Window(size=5) and Hidden Layers (2x16 neurons)
-    nn.createNeuralNetwork(ow::owProjectType::FORECASTING, {16, 16}, 5); 
+    // 2. Prepare Windowed Data at Dataset Level
+    // Each row now contains history [t-5...t-1]
+    dataset->prepareForecastData(5); 
+
+    // 3. Build Architecture
+    // createNeuralNetwork now creates a clean Linear MLP fitting the windowed input
+    nn.createNeuralNetwork(ow::owProjectType::FORECASTING, {16, 16}); 
     
-    // 3. Configure Training
+    // 4. Configure Training
     nn.setOptimizer(std::make_shared<ow::owLBFGSOptimizer>());
 
-    // 4. Train
+    // 5. Train (Shuffle is now safe as windows are packaged within each sample)
     nn.train();
 
-    // 5. Predict
-    // Best practice: reset state before real-time rolling predictions
-    nn.reset(); 
-    
-    // Provide the raw current sample (SlidingWindowLayer handles history internally)
-    ow::owTensor<float, 2> input(1, nn.getDataset()->getInputVariableNum());
-    input.setValues({your_values});
-    auto prediction = nn.forward(input);
-    std::cout << "Predicted Next Value: " << prediction(0, 0) << std::endl;
+    // 6. Predict Actual Values
+    // nn.predict() automatically performs inverse normalization for you!
+    auto prediction = nn.predict(); 
+    std::cout << "Predicted Next Value (Actual Scale): " << prediction(0, 0) << std::endl;
 
     return 0;
 }

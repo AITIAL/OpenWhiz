@@ -21,70 +21,80 @@ void generateSineWaveCSV(const std::string& filename, int points) {
 }
 
 int main() {
-    std::cout << "=== OpenWhiz Time Series Forecasting Example ===\n" << std::endl;
+    std::cout << "=== OpenWhiz Sine Wave Forecasting Example ===\n" << std::endl;
 
     // 1. Generate sine wave data
     const std::string csvFile = "examples/forecastExample/sine_wave.csv";
     generateSineWaveCSV(csvFile, 300);
     std::cout << "Generated 300 points of sine wave data." << std::endl;
 
-    // 2. Setup Dataset
+    // 2. Setup Dataset with In-Place Normalization
     auto dataset = std::make_shared<ow::owDataset>();
     dataset->setDelimiter(',');
-    if (!dataset->loadFromCSV(csvFile)) {
+    // autoNormalize = true
+    if (!dataset->loadFromCSV(csvFile, true, true)) {
         std::cerr << "Failed to load CSV data." << std::endl;
         return -1;
     }
     
-    // 1 column as target (the last one), which means 1 column left for input
     dataset->setTargetVariableNum(1);
-    dataset->setRatios(0.8f, 0.1f, 0.1f);
+    
+    // Prepare Windowed Data at Dataset Level
+    const int windowSize = 10;
+    dataset->prepareForecastData(windowSize);
+    
+    dataset->setRatios(0.8f, 0.1f, 0.1f, true);
 
-    std::cout << "Input variables: " << dataset->getInputVariableNum() << std::endl;
+    std::cout << "Input variables (Windowed): " << dataset->getInputVariableNum() << std::endl;
     std::cout << "Target variables: " << dataset->getTargetVariableNum() << std::endl;
 
-    // 3. Initialize Neural Network with FORECASTING project type
+    // 3. Initialize Neural Network
     ow::owNeuralNetwork nn;
     nn.setDataset(dataset);
     
-    // Automatically configures: 
-    // Normalization -> SlidingWindowLayer (10-step history + current) -> Linear(16) -> Linear(1) -> InverseNormalization
-    const int windowSize = 10;
-    nn.createNeuralNetwork(ow::owProjectType::FORECASTING, {16}, windowSize);
+    // Simple MLP with 16 hidden neurons
+    nn.createNeuralNetwork(ow::owProjectType::FORECASTING, {16});
     
+    // Using L-BFGS for high precision on sine wave
     nn.setOptimizer(std::make_shared<ow::owLBFGSOptimizer>(1.0f));
     nn.setMaximumEpochNum(200);
     nn.setLossStagnationTolerance(1e-6f);
-    nn.setPrintEpochInterval(100);
+    nn.setPrintEpochInterval(50);
 
     // 4. Train
     std::cout << "Training model to predict sine wave..." << std::endl;
     nn.train();
 
     // 5. Evaluation
-    auto testIn = dataset->getTestInput();
-    auto testOut = dataset->getTestTarget();
-    auto eval = nn.evaluatePerformance(testIn, testOut, 0.05f);
+    auto eval = nn.evaluatePerformance(0.05f);
     
     std::cout << "\nFinal Performance on Test Set:" << std::endl;
     nn.printEvaluationReport(eval);
 
-    // 6. Forecast Test (Real-time mode)
+    // 6. Predict Test (Using the new predict() API)
     std::cout << "\n--- Rolling Prediction Test (Last 5 points) ---" << std::endl;
     
-    auto fullIn = dataset->getTrainInput();
-    size_t startIdx = 100;
+    auto testIn = dataset->getTestInput();
+    auto testOut = dataset->getTestTarget();
+    size_t testSamples = testIn.shape()[0];
     
-    for (size_t i = 0; i < 5; ++i) {
-        ow::owTensor<float, 2> currentSample(1, 1);
-        currentSample(0, 0) = fullIn(startIdx + i, 0);
+    for (size_t i = testSamples > 5 ? testSamples - 5 : 0; i < testSamples; ++i) {
+        // Extract sample
+        ow::owTensor<float, 2> sample(1, testIn.shape()[1]);
+        for(size_t j=0; j<testIn.shape()[1]; ++j) sample(0, j) = testIn(i, j);
 
-        auto pred = nn.forward(currentSample);
-        float actualNext = fullIn(startIdx + i + 1, 0); // Roughly, next value
+        // predict() handles forward + inverseNormalize
+        auto pred = nn.predict(sample);
+        
+        // Recover actual value for comparison
+        ow::owTensor<float, 2> actualTensor(1, 1);
+        actualTensor(0, 0) = testOut(i, 0);
+        dataset->inverseNormalize(actualTensor);
+        float actualVal = actualTensor(0, 0);
 
         std::cout << "Step " << i << ": Predicted: " << pred(0, 0) 
-                  << " | Actual Next: " << actualNext 
-                  << " | Err: " << std::abs(pred(0, 0) - actualNext) << std::endl;
+                  << " | Actual: " << actualVal 
+                  << " | Err: " << std::abs(pred(0, 0) - actualVal) << std::endl;
     }
 
     return 0;
