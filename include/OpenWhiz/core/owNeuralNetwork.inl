@@ -267,7 +267,7 @@ inline bool owNeuralNetwork::loadFromXML(const std::string& filename) {
 
         if (type == "Concatenate Layer") {
             auto concat = std::static_pointer_cast<owConcatenateLayer>(layer);
-            std::vector<std::shared_ptr<owLayer>> branches;
+            std::vector<std::shared_ptr<owConcatenateLayer::owBranch>> branches;
             
             std::string countStr = owLayer::getNestedTagContent(layerContent, "BranchCount");
             size_t branchCount = countStr.empty() ? 0 : std::stoul(countStr);
@@ -279,7 +279,13 @@ inline bool owNeuralNetwork::loadFromXML(const std::string& filename) {
                     size_t bEndTag = layerContent.find(">", bStart);
                     std::string subTag = layerContent.substr(bStart, bEndTag - bStart + 1);
                     std::string subContent = owLayer::getNestedTagContent(layerContent, branchTag);
-                    branches.push_back(parseLayer(subTag, subContent));
+                    
+                    auto b = std::make_shared<owConcatenateLayer::owBranch>();
+                    b->fromXML(subContent);
+                    std::string enabledStr = owLayer::getAttr(subTag, "enabled");
+                    if (!enabledStr.empty()) b->setEnabled(std::stoi(enabledStr) == 1);
+                    
+                    branches.push_back(b);
                 }
             }
             concat->setBranches(branches);

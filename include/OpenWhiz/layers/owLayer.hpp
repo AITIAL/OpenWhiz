@@ -120,6 +120,16 @@ public:
         return s.substr(close_bracket + 1, e_pos - (close_bracket + 1));
     }
 
+    /** @brief Static helper to extract content of a tag including its attributes. */
+    static std::string getTagContentWithAttributes(const std::string& s, const std::string& tag) {
+        std::string sT = "<" + tag; 
+        size_t s_pos = s.find(sT);
+        if (s_pos == std::string::npos) return std::string("");
+        size_t e_tag_pos = s.find("</" + tag + ">", s_pos);
+        if (e_tag_pos == std::string::npos) return std::string("");
+        return s.substr(s_pos, (e_tag_pos + tag.length() + 3) - s_pos);
+    }
+
     /** @brief Static helper to extract an attribute value from an XML tag. */
     static std::string getAttr(const std::string& s, const std::string& attr) {
         std::string aS = attr + "=\"";
