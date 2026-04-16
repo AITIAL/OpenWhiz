@@ -1,3 +1,10 @@
+/*
+ * openwhiz.hpp
+ *
+ *  Created on: Nov 24, 2025
+ *      Author: Noyan Culum, AITIAL
+ */
+
 /****************************************************************************
  * Copyright (c) 2025 AITIAL LOGICIEL SAS, Paris, France                    *
  *                                                                          *
@@ -96,6 +103,8 @@
 #include "layers/owRescalingLayer.hpp"
 #include "layers/owSequentialLayer.hpp"
 #include "layers/owSlidingWindowLayer.hpp"
+#include "layers/owSlidingWindowViewLayer.hpp"
+#include "layers/owCacheLayer.hpp"
 
 // Implementation of owNeuralNetwork inline methods (must be last)
 #include "core/owNeuralNetwork.inl"

@@ -49,7 +49,7 @@ int main() {
 
     // --- BRANCH 1: WEEKLY ---
     auto branch1 = std::make_shared<ow::owSequentialLayer>();
-    auto swShort = std::make_shared<ow::owSlidingWindowLayer>(shortWindow, 1, masterWindow, false);
+    auto swShort = std::make_shared<ow::owSlidingWindowViewLayer>(shortWindow, 1, masterWindow, false);
     swShort->setNeuronNum(1); 
     branch1->addLayer(swShort);
     branch1->addLayer(std::make_shared<ow::owChangeRateLayer>(shortWindow)); 
@@ -65,7 +65,7 @@ int main() {
 
     // --- BRANCH 2: MONTHLY ---
     auto branch2 = std::make_shared<ow::owSequentialLayer>();
-    auto swLong = std::make_shared<ow::owSlidingWindowLayer>(masterWindow, 1, masterWindow, false);
+    auto swLong = std::make_shared<ow::owSlidingWindowViewLayer>(masterWindow, 1, masterWindow, false);
     swLong->setNeuronNum(1);
     branch2->addLayer(swLong);
     branch2->addLayer(std::make_shared<ow::owChangeRateLayer>(masterWindow));

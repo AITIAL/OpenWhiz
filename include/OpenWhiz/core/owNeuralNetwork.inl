@@ -240,6 +240,8 @@ inline std::shared_ptr<owLayer> createLayerByName(const std::string& type, size_
     if (type == "Bounding Layer") return std::make_shared<owBoundingLayer>(0.0f, 1.0f);
     if (type == "Attention Layer") return std::make_shared<owAttentionLayer>(inputSize > 0 ? inputSize : 1);
     if (type == "Sliding Window Layer") return std::make_shared<owSlidingWindowLayer>();
+    if (type == "Sliding Window View Layer") return std::make_shared<owSlidingWindowViewLayer>();
+    if (type == "Cache Layer") return std::make_shared<owCacheLayer>();
     if (type == "Trend Layer") return std::make_shared<owTrendLayer>();
     if (type == "Anomaly Detection Layer") return std::make_shared<owAnomalyDetectionLayer>();
     if (type == "Affine Layer") return std::make_shared<owAffineLayer>();
@@ -446,9 +448,33 @@ inline void owNeuralNetwork::runStandardTrainingLoop() {
         // Sync target pointers for independent branch learning
         for (auto& layer : m_layers) layer->setTarget(&trainTarget);
 
+        // Cache Layer check for playback mode
+        const owTensor<float, 2>* activeTarget = &trainTarget;
+        std::shared_ptr<owCacheLayer> activeCache = nullptr;
+        for (auto& layer : m_layers) {
+            auto cache = std::dynamic_pointer_cast<owCacheLayer>(layer);
+            if (cache && cache->isFull()) {
+                activeCache = cache;
+            }
+        }
+
         auto pred = forward(trainIn);
-        float loss = calculateLoss(pred, trainTarget);
-        backward(pred, trainTarget);
+        
+        // If a cache is active, it has its own (potentially shuffled) targets
+        if (activeCache) {
+            activeTarget = &activeCache->getActiveTarget();
+        }
+
+        float loss = calculateLoss(pred, *activeTarget);
+        backward(pred, *activeTarget);
+        
+        // Lock caches after the first recording epoch
+        if (epoch == 1) {
+            for (auto& layer : m_layers) {
+                auto cache = std::dynamic_pointer_cast<owCacheLayer>(layer);
+                if (cache) cache->lockCache();
+            }
+        }
         
         // --- INDEPENDENT BRANCH MONITORING ---
         // We look for ConcatenateLayers and check their branches
