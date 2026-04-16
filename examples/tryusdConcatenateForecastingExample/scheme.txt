@@ -1,0 +1,79 @@
+====================================================================================================
+                OPENWHIZ USD/TRY EXPERT-ARBITER ARCHITECTURE SCHEME
+====================================================================================================
+
+                                [ INPUT TENSOR ]
+                         Shape: [Batch, 22] (Master Window)
+                                       |
+      _________________________________|_________________________________
+     |                                                                   |
+     V                                                                   V
+[ BRANCH 1: WEEKLY EXPERT ]                             [ BRANCH 2: MONTHLY EXPERT ]
+Type: owSequentialLayer                                 Type: owSequentialLayer
+Opt: ADAM (LR=0.001)                                    Opt: ADAM (LR=0.001)
+     |                                                                   |
+     V                                                                   V
++---------------------------+                           +---------------------------+
+| owSlidingWindowLayer      |                           | owSlidingWindowLayer      |
+| Window: 5, Master: 22     |                           | Window: 22, Master: 22    |
++---------------------------+                           +---------------------------+
+             |                                                       |
+             V                                                       V
++---------------------------+                           +---------------------------+
+| owChangeRateLayer         |                           | owChangeRateLayer         |
+| Formula: (x_t - x_prev)/x |                           | Formula: (x_t - x_prev)/x |
++---------------------------+                           +---------------------------+
+             |                                                       |
+             V                                                       V
++---------------------------+                           +---------------------------+
+| owAffineLayer             |                           | owAffineLayer             |
+| Scale (A): 100.0          |                           | Scale (A): 100.0          |
+| Purpose: Gradient Boost   |                           | Purpose: Gradient Boost   |
++---------------------------+                           +---------------------------+
+             |                                                       |
+             V                                                       V
++---------------------------+                           +---------------------------+
+| owLinearLayer (4 -> 64)   |                           | owLinearLayer (21 -> 64)  |
+| Act: Identity             |                           | Act: Identity             |
++---------------------------+                           +---------------------------+
+             |                                                       |
+             V                                                       V
++---------------------------+                           +---------------------------+
+| owLinearLayer (64 -> 32)  |                           | owLinearLayer (64 -> 32)  |
+| Act: Identity             |                           | Act: Identity             |
++---------------------------+                           +---------------------------+
+             |                                                       |
+             V                                                       V
++---------------------------+                           +---------------------------+
+| owLinearLayer (32 -> 1)   |                           | owLinearLayer (32 -> 1)   |
+| Output: Scaled % Rate     |                           | Output: Scaled % Rate     |
++---------------------------+                           +---------------------------+
+             |                                                       |
+             |_______________________________________________________|
+                                         |
+                                         V
+                             [ owConcatenateLayer ]
+                             Merges Experts into [Batch, 2]
+                                         |
+                                         V
+                             +---------------------------+
+                             | owLinearLayer (2 -> 1)    |
+                             | Role: FINAL ARBITER       |
+                             | Act: Identity             |
+                             | Weights: Normalized (Sum=1)|
+                             | Bias: 0.0 (Pure Ensemble) |
+                             +---------------------------+
+                                         |
+                                         V
+                             [ SCALED % CHANGE PREDICTION ]
+                                         |
+                                         V
+                             ( Final TL Calculation )
+                      Price = Last_TL * (1.0 + (Pred / 100.0))
+
+====================================================================================================
+Global Loss: owHuberLoss (Delta=1.0)
+Training:
+  - Phase 1: Experts train independently on Local % Targets (2000 Epochs)
+  - Phase 2: Arbiter trains on Global % Target (1500 Epochs)
+====================================================================================================
