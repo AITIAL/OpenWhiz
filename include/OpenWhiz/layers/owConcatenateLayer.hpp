@@ -16,24 +16,27 @@ namespace ow {
 
 /**
  * @class owConcatenateLayer
- * @brief A meta-layer that executes multiple branches in parallel and concatenates their outputs along the feature dimension.
+ * @brief A structural meta-layer that implements the "Independent Experts" architecture by parallelizing network branches.
  * 
- * This layer acts as a branching point in the network. It splits a single input tensor into multiple parts,
- * passes each part through a dedicated "branch" (another owLayer), and then merges the results back into 
- * a single wide tensor.
+ * This layer acts as a powerful orchestration point, allowing multiple independent neural network 
+ * pathways (Experts) to process the same or sliced input data. The results are merged into 
+ * a single wide feature vector for final decision-making.
  * 
- * @details
- * **Workflow:**
- * 1. **Input Slicing:** The input [Batch, TotalInputSize] is sliced horizontally. Each branch `i` 
- *    receives a slice of width `branch[i]->getInputSize()`.
- * 2. **Parallel Execution:** Each branch executes its `forward` pass independently.
- * 3. **Output Concatenation:** The results [Batch, OutputSize_i] are concatenated into a single result 
- *    tensor [Batch, Sum(OutputSize_i)].
+ * **Architectural Significance:**
+ * - **Multi-Scale Analysis:** Allows implementing branches that look at different temporal 
+ *   resolutions (e.g., Weekly vs. Monthly trends in Financial Systems).
+ * - **Modular Design:** Experts can be complex sequences of layers, including LSTMs or 
+ *   PCA-enhanced blocks.
  * 
- * **Use Cases:**
- * - Multi-scale feature extraction (e.g., parallel windows in time-series).
- * - Combining different types of input encodings.
- * - Implementing Inception-like architectural blocks.
+ * **Mathematical Logic:**
+ * - **Forward Pass:** 
+ *   Let $X$ be the input. The output is a horizontal concatenation:
+ *   $Y = [Expert_1(X), Expert_2(X), ..., Expert_N(X)]$
+ *   Total Output Width = $\sum OutputSize_i$.
+ * - **Backward Pass (Gradient Flow):**
+ *   The upstream gradient $\delta$ is sliced into $\{\delta_1, \delta_2, ..., \delta_N\}$. 
+ *   If `m_useSharedInput` is enabled, the resulting input gradient is the element-wise sum:
+ *   $\nabla X = \sum_{i=1}^{N} \nabla Expert_i(\delta_i)$
  */
 class owConcatenateLayer : public owLayer {
 public:
