@@ -31,6 +31,7 @@ public:
     size_t getInputSize() const override { return m_inputFeatures; } 
     size_t getOutputSize() const override { return m_windowSize + (m_includeCurrent ? m_inputFeatures : 0); }
     
+    void setInputSize(size_t size) override { m_inputFeatures = size; }
     void setNeuronNum(size_t num) override { m_inputFeatures = num; }
 
     /** @brief Resets the internal buffer. Important between epochs or different sequences. */

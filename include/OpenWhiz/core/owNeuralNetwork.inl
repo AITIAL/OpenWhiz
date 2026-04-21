@@ -25,9 +25,47 @@ inline bool owNeuralNetwork::loadData(const std::string& filename) { return m_da
 inline void owNeuralNetwork::setRegularization(int type) { m_regType = type; for (auto& layer : m_layers) layer->setRegularization(type); }
 inline void owNeuralNetwork::addLayer(std::shared_ptr<owLayer> layer) {
     if (layer) { 
+        layer->setParentNetwork(this);
         layer->setOptimizer(m_optimizer.get()); 
         layer->setRegularization(m_regType); 
+
+        // Auto-Chaining: Automatically set input size based on previous layer or dataset
+        if (layer->getInputSize() == 0) {
+            size_t prevOutput = 0;
+            if (m_layers.empty()) {
+                if (m_dataset) prevOutput = (size_t)m_dataset->getInputVariableNum();
+            } else {
+                prevOutput = m_layers.back()->getOutputSize();
+            }
+            if (prevOutput > 0) layer->setInputSize(prevOutput);
+        }
+
         m_layers.push_back(layer); 
+    }
+}
+
+inline void owNeuralNetwork::getInputMinMax(owTensor<float, 2>& min, owTensor<float, 2>& max) const {
+    if (!m_dataset) return;
+    int inputSize = m_dataset->getInputVariableNum();
+    min = owTensor<float, 2>(1, inputSize);
+    max = owTensor<float, 2>(1, inputSize);
+    auto indices = m_dataset->getUsedColumnIndices(false);
+    for (size_t i = 0; i < indices.size(); ++i) {
+        auto params = m_dataset->getNormalizationParams((int)i);
+        min(0, i) = params.first;
+        max(0, i) = params.second;
+    }
+}
+
+inline void owNeuralNetwork::getTargetMinMax(owTensor<float, 2>& min, owTensor<float, 2>& max) const {
+    if (!m_dataset) return;
+    int targetSize = m_dataset->getTargetVariableNum();
+    min = owTensor<float, 2>(1, targetSize);
+    max = owTensor<float, 2>(1, targetSize);
+    for (int i = 0; i < targetSize; ++i) {
+        auto params = m_dataset->getNormalizationParams(m_dataset->getInputVariableNum() + i);
+        min(0, (size_t)i) = params.first;
+        max(0, (size_t)i) = params.second;
     }
 }
 

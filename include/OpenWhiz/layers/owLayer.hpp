@@ -27,6 +27,7 @@ namespace ow {
 
 // Forward declaration to break circular dependency
 class owOptimizer;
+class owNeuralNetwork;
 
 enum owRegularizationType {
     NONE = 0,
@@ -81,6 +82,9 @@ public:
 
     /** @return The number of input features expected by this layer. */
     virtual size_t getInputSize() const = 0;
+
+    /** @brief Sets the input feature size. This may trigger internal parameter reinitialization. */
+    virtual void setInputSize(size_t size) { (void)size; }
 
     /** @return The number of output features produced by this layer. */
     virtual size_t getOutputSize() const = 0;
@@ -254,8 +258,15 @@ public:
     /** @brief Synchronizes layer state (useful for distributed training). */
 	virtual void synchronize() {};
 
+    /** @brief Sets the parent neural network that contains this layer. */
+    void setParentNetwork(owNeuralNetwork* nn) { m_parentNetwork = nn; }
+
+    /** @return Pointer to the parent neural network. */
+    owNeuralNetwork* getParentNetwork() const { return m_parentNetwork; }
+
 protected:
     std::string m_layerName = "Base Layer";
+    owNeuralNetwork* m_parentNetwork = nullptr;
     bool m_isIndependentExpertMode = false;
     bool m_isFrozen = false; 
     float m_convergenceThreshold = 0.0f;

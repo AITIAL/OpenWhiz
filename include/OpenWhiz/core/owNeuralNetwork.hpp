@@ -504,6 +504,20 @@ public:
      */
     bool loadFromXML(const std::string& filename);
 
+    /**
+     * @brief Retrieves input normalization statistics (min and max) from the dataset.
+     * @param min Output tensor to store minimum values [1, InputDim].
+     * @param max Output tensor to store maximum values [1, InputDim].
+     */
+    void getInputMinMax(owTensor<float, 2>& min, owTensor<float, 2>& max) const;
+
+    /**
+     * @brief Retrieves target normalization statistics (min and max) from the dataset.
+     * @param min Output tensor to store minimum values [1, TargetDim].
+     * @param max Output tensor to store maximum values [1, TargetDim].
+     */
+    void getTargetMinMax(owTensor<float, 2>& min, owTensor<float, 2>& max) const;
+
 private:
     std::vector<std::shared_ptr<owLayer>> m_layers; ///< Ordered list of layers.
     std::shared_ptr<owOptimizer> m_optimizer;      ///< Strategy for updating weights.

@@ -32,11 +32,32 @@ public:
     }
 
     /**
-     * @brief Adds a layer to the end of the sequence.
+     * @brief Adds a layer to the end of the sequence and automatically configures its input size.
      * @param layer A shared pointer to the layer to be added.
      */
     void addLayer(std::shared_ptr<owLayer> layer) {
-        if (layer) m_layers.push_back(layer);
+        if (layer) {
+            // Auto-Chaining: Automatically set input size based on previous layer
+            if (layer->getInputSize() == 0 && !m_layers.empty()) {
+                size_t prevOutput = m_layers.back()->getOutputSize();
+                if (prevOutput > 0) layer->setInputSize(prevOutput);
+            }
+            m_layers.push_back(layer);
+        }
+    }
+
+    /**
+     * @brief Sets the input size for the sequential layer and propagates it to the first sub-layer.
+     */
+    void setInputSize(size_t size) override {
+        if (!m_layers.empty()) {
+            m_layers.front()->setInputSize(size);
+            // Re-chain subsequent layers in case the first one changed its output size
+            for (size_t i = 1; i < m_layers.size(); ++i) {
+                size_t prevOutput = m_layers[i-1]->getOutputSize();
+                if (prevOutput > 0) m_layers[i]->setInputSize(prevOutput);
+            }
+        }
     }
 
     /**

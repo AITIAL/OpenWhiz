@@ -179,6 +179,19 @@ public:
     void setNeuronNum(size_t num) override { (void)num; }
 
     /**
+     * @brief Propagates input size to all enabled branches.
+     */
+    void setInputSize(size_t size) override {
+        if (m_useSharedInput) {
+            for (auto& b : m_branches) b->setInputSize(size);
+        } else {
+            // If not shared, we'd need a slicing strategy, but standard is shared for experts.
+            // For now, let's assume shared if size is passed.
+            for (auto& b : m_branches) b->setInputSize(size);
+        }
+    }
+
+    /**
      * @brief Performs forward pass skipping disabled branches.
      */
     owTensor<float, 2> forward(const owTensor<float, 2>& input) override {

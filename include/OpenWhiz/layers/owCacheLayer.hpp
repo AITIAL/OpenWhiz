@@ -34,6 +34,7 @@ public:
 
     size_t getInputSize() const override { return m_inputDim; }
     size_t getOutputSize() const override { return m_inputDim; }
+    void setInputSize(size_t size) override { m_inputDim = size; }
     void setNeuronNum(size_t num) override { m_inputDim = num; }
 
     void reset() override {
@@ -123,6 +124,7 @@ public:
     }
 
     bool isFull() const { return m_isFull; }
+    void setFull(bool full) { m_isFull = full; }
 
 private:
     bool m_shuffleEnabled;
