@@ -111,7 +111,7 @@ public:
      * Categorical: Automatically detects text columns and applies label encoding.
      * Delimiter: Automatically detected if not explicitly set.
      */
-    bool loadFromCSV(const std::string& filepath, bool has_header = true, bool autoNormalize = true) {
+    bool loadFromCSV(const std::string& filepath, bool has_header = true, bool autoNormalize = false) {
         std::ifstream file(filepath);
         if (!file.is_open()) return false;
         std::string line;
@@ -223,6 +223,10 @@ public:
         for (size_t c = 0; c < cols; ++c) {
             for (size_t r = 0; r < rows; ++r) m_fullData(r, c) = parseValue(raw_data[r][c], m_columns[c]);
         }
+
+        // Always calculate statistics (min/max) even if not normalizing in-place
+        calculateStatistics();
+
         m_sampleTypes.assign(rows, SampleType::Training);
         shuffleSampleTypes();
         m_autoNormalizeEnabled = autoNormalize;
@@ -233,6 +237,24 @@ public:
     void setAutoNormalizeEnabled(bool enable) { m_autoNormalizeEnabled = enable; }
     void setTargetVariableNum(int num) { m_targetVariableNum = num; }
     int getTargetVariableNum() const { return m_targetVariableNum; }
+
+    /**
+     * @brief Calculates min/max statistics for each column in the dataset.
+     */
+    void calculateStatistics() {
+        if (m_fullData.size() == 0) return;
+        size_t rows = m_fullData.shape()[0];
+        size_t cols = m_fullData.shape()[1];
+        for (size_t c = 0; c < cols; ++c) {
+            float minVal = 1e30f, maxVal = -1e30f;
+            for (size_t r = 0; r < rows; ++r) {
+                minVal = std::min(minVal, m_fullData(r, c));
+                maxVal = std::max(maxVal, m_fullData(r, c));
+            }
+            m_columns[c].min = minVal;
+            m_columns[c].max = maxVal;
+        }
+    }
 
     /**
      * @brief Returns the string label for a numeric category ID.
@@ -301,17 +323,12 @@ public:
      */
     void normalizeData() {
         if (m_fullData.size() == 0) return;
+        calculateStatistics();
         size_t rows = m_fullData.shape()[0];
         size_t cols = m_fullData.shape()[1];
         for (size_t c = 0; c < cols; ++c) {
-            float minVal = 1e30f, maxVal = -1e30f;
-            for (size_t r = 0; r < rows; ++r) {
-                minVal = std::min(minVal, m_fullData(r, c));
-                maxVal = std::max(maxVal, m_fullData(r, c));
-            }
-            m_columns[c].min = minVal;
-            m_columns[c].max = maxVal;
-            
+            float minVal = m_columns[c].min;
+            float maxVal = m_columns[c].max;
             float range = maxVal - minVal;
             if (range == 0.0f) range = 1.0f;
             
