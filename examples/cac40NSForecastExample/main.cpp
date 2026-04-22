@@ -23,84 +23,100 @@
  */
 
 int main() {
-    std::cout << "=== OpenWhiz CAC-40 NS Forecast Example (Layer-level Prep) ===\n" << std::endl;
+    try {
+        std::cout << "=== OpenWhiz CAC-40 NS Forecast Example (Layer-level Prep) ===\n" << std::endl;
 
-    const std::string csvFile = "C:/dev/OpenWhiz/examples/cac40ForecastExample/cac40_3years.csv";
+#ifdef OW_USE_GPU
+        std::cout << "Using GPU Acceleration (CUDA)" << std::endl;
+#else
+        std::cout << "Using CPU (SIMD Accelerated)" << std::endl;
+#endif
 
-    // --- 1. DATASET SETUP (Raw) ---
-    auto dataset = std::make_shared<ow::owDataset>();
-    if (!dataset->loadFromCSV(csvFile, true, false)) { // autoNormalize = false
-        std::cerr << "Failed to load CSV file." << std::endl;
-        return -1;
-    }
-    dataset->setColumnUsage("Date", ow::ColumnUsage::UNUSED);
-    dataset->setTargetVariableNum(1);
+        const std::string csvFile = "C:/dev/OpenWhiz/examples/cac40ForecastExample/cac40_3years.csv";
 
-    // --- 2. ARCHITECTURE ---
-    ow::owNeuralNetwork nn;
-    nn.setDataset(dataset);
-
-    // Normalization: x_norm = (x - min) / (max - min)
-    nn.addLayer(std::make_shared<ow::owNormalizationLayer>());
-    
-    // Sliding Window: generate [T-5...T-1] history for predicting T
-    nn.addLayer(std::make_shared<ow::owSlidingWindowLayer>(5, 1, false));
-    
-    // Cache: Record outputs of non-trainable layers to speed up epochs 2-N
-    nn.addLayer(std::make_shared<ow::owCacheLayer>(false)); 
-    
-    // Standard hidden layers
-    auto layer1 = std::make_shared<ow::owLinearLayer>(0, 64);
-    layer1->setActivationByName("ReLU");
-    nn.addLayer(layer1);
-
-    auto layer2 = std::make_shared<ow::owLinearLayer>(0, 32);
-    layer2->setActivationByName("ReLU");
-    nn.addLayer(layer2);
-    
-    // Output Layer
-    auto outputLayer = std::make_shared<ow::owLinearLayer>(0, 1);
-    outputLayer->setActivationByName("Identity"); 
-    nn.addLayer(outputLayer);
-
-    // Inverse Normalization: y_raw = y_norm * (max - min) + min
-    nn.addLayer(std::make_shared<ow::owInverseNormalizationLayer>());
-
-    // --- 3. TRAINING SETTINGS ---
-    nn.setOptimizer(std::make_shared<ow::owADAMOptimizer>(0.0005f));
-    nn.setLoss(std::make_shared<ow::owHuberLoss>(1.0f));
-    nn.setMaximumEpochNum(2000);
-    nn.setPrintEpochInterval(400);
-
-    std::cout << "Training..." << std::endl;
-    nn.train();
-
-    // --- 4. EVALUATION ---
-    std::cout << "\n--- Last 5 Samples Comparison ---" << std::endl;
-    std::cout << std::setw(15) << "Actual" << std::setw(15) << "Predicted" << std::setw(15) << "Error" << std::endl;
-    std::cout << "-------------------------------------------------------------" << std::endl;
-
-    nn.reset();
-    auto fullData = dataset->getData();
-    size_t rows = fullData.shape()[0];
-    int targetColIdx = dataset->getTargetColumnIndex(0);
-    std::vector<int> inputIndices = dataset->getUsedColumnIndices(false);
-    size_t inputDim = inputIndices.size();
-
-    for (size_t i = 0; i < rows; ++i) {
-        ow::owTensor<float, 2> rowIn(1, inputDim);
-        for (size_t j = 0; j < inputDim; ++j) rowIn(0, j) = fullData(i, (size_t)inputIndices[j]);
-        
-        auto pred = nn.forward(rowIn);
-        
-        if (i >= rows - 5) {
-            float actual = fullData(i, (size_t)targetColIdx);
-            float predicted = pred(0, 0);
-            std::cout << std::fixed << std::setprecision(2) 
-                      << std::setw(15) << actual 
-                      << std::setw(15) << predicted 
-                      << std::setw(15) << std::abs(actual - predicted) << std::endl;
+        // --- 1. DATASET SETUP (Raw) ---
+        auto dataset = std::make_shared<ow::owDataset>();
+        if (!dataset->loadFromCSV(csvFile, true, false)) { // autoNormalize = false
+            std::cerr << "Failed to load CSV file." << std::endl;
+            return -1;
         }
+        dataset->setColumnUsage("Date", ow::ColumnUsage::UNUSED);
+        dataset->setTargetVariableNum(1);
+
+        // --- 2. ARCHITECTURE ---
+        ow::owNeuralNetwork nn;
+        nn.setDataset(dataset);
+
+        // Normalization: x_norm = (x - min) / (max - min)
+        nn.addLayer(std::make_shared<ow::owNormalizationLayer>());
+        
+        // Sliding Window: generate [T-5...T-1] history for predicting T
+        nn.addLayer(std::make_shared<ow::owSlidingWindowLayer>(5, 1, false));
+        
+        // Cache: Record outputs of non-trainable layers to speed up epochs 2-N
+        nn.addLayer(std::make_shared<ow::owCacheLayer>(false)); 
+        
+        // Standard hidden layers
+        auto layer1 = std::make_shared<ow::owLinearLayer>(0, 64);
+        layer1->setActivationByName("ReLU");
+        nn.addLayer(layer1);
+
+        auto layer2 = std::make_shared<ow::owLinearLayer>(0, 32);
+        layer2->setActivationByName("ReLU");
+        nn.addLayer(layer2);
+        
+        // Output Layer
+        auto outputLayer = std::make_shared<ow::owLinearLayer>(0, 1);
+        outputLayer->setActivationByName("Identity"); 
+        nn.addLayer(outputLayer);
+
+        // Inverse Normalization: y_raw = y_norm * (max - min) + min
+        nn.addLayer(std::make_shared<ow::owInverseNormalizationLayer>());
+
+        // --- 3. TRAINING SETTINGS ---
+        nn.setOptimizer(std::make_shared<ow::owADAMOptimizer>(0.0005f));
+        nn.setLoss(std::make_shared<ow::owHuberLoss>(1.0f));
+        nn.setMaximumEpochNum(2000);
+        nn.setPrintEpochInterval(100);
+
+        std::cout << "Training..." << std::endl;
+        nn.train();
+
+        double durationMs = nn.getTrainingTime() * 1000.0;
+        std::cout << "\nTraining Finished!" << std::endl;
+        std::cout << "Total Training Time: " << std::fixed << std::setprecision(2) << durationMs << " ms" << std::endl;
+        std::cout << "Avg Time per Epoch: " << (durationMs / nn.getTrainingEpochNum()) << " ms" << std::endl;
+
+        // --- 4. EVALUATION ---
+        std::cout << "\n--- Last 5 Samples Comparison ---" << std::endl;
+        std::cout << std::setw(15) << "Actual" << std::setw(15) << "Predicted" << std::setw(15) << "Error" << std::endl;
+        std::cout << "-------------------------------------------------------------" << std::endl;
+
+        nn.reset();
+        auto fullData = dataset->getData();
+        size_t rows = fullData.shape()[0];
+        int targetColIdx = dataset->getTargetColumnIndex(0);
+        std::vector<int> inputIndices = dataset->getUsedColumnIndices(false);
+        size_t inputDim = inputIndices.size();
+
+        for (size_t i = 0; i < rows; ++i) {
+            ow::owTensor<float, 2> rowIn(1, inputDim);
+            for (size_t j = 0; j < inputDim; ++j) rowIn(0, j) = fullData(i, (size_t)inputIndices[j]);
+            
+            auto pred = nn.forward(rowIn);
+            
+            if (i >= rows - 5) {
+                float actual = fullData(i, (size_t)targetColIdx);
+                float predicted = pred(0, 0);
+                std::cout << std::fixed << std::setprecision(2) 
+                          << std::setw(15) << actual 
+                          << std::setw(15) << predicted 
+                          << std::setw(15) << std::abs(actual - predicted) << std::endl;
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Unhandled Exception: " << e.what() << std::endl;
+        return 1;
     }
 
     return 0;

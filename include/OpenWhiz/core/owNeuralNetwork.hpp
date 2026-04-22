@@ -311,6 +311,15 @@ public:
     std::string predictLabel(const owTensor<float, 2>& input, int targetVarIdx = 0);
 
     /**
+     * @brief Prints the current training status in a standardized format.
+     * @param epoch Current epoch number.
+     * @param trainLoss Current training loss.
+     * @param valLoss Current validation loss (0.0 if not available).
+     * @param elapsedTime Time elapsed since the start of training.
+     */
+    void printTrainingStatus(int epoch, float trainLoss, float valLoss, double elapsedTime);
+
+    /**
      * @brief Prints the contents of an EvaluationReport to standard output.
      * @param report The report to print.
      */
@@ -539,7 +548,7 @@ private:
     std::string m_finishReason = "None";
     bool m_isPartiallyFitted = false;
     
-    int m_printInterval = 1;
+    int m_printInterval = 5;
     bool m_enablePrinting = true;
     int m_regType = 2; // Default L2
 

@@ -213,8 +213,21 @@ public:
 
             // Step 3: Global Stats & Stagnation
             nn->setLastTrainError((float)f);
-            if (nn->getPrintEpochInterval() > 0 && k % nn->getPrintEpochInterval() == 0) {
-                std::cout << "Epoch: " << k << ", Loss: " << f << std::endl;
+
+            // Validation loss calculation (optional but consistent)
+            float valLoss = 0.0f;
+            auto valIn = ds->getValInput();
+            if (valIn.size() > 0) {
+                auto valTarget = ds->getValTarget();
+                auto valPred = nn->forward(valIn);
+                valLoss = nn->calculateLoss(valPred, valTarget);
+                nn->setLastValError(valLoss);
+            }
+
+            if (nn->getPrintEpochInterval() > 0 && (k == 1 || k % nn->getPrintEpochInterval() == 0)) {
+                auto now = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double> currentElapsed = now - startTime;
+                nn->printTrainingStatus(k, (float)f, valLoss, currentElapsed.count());
             }
 
             // Force at least 100 epochs if it's early and accuracy isn't perfect yet
@@ -229,9 +242,22 @@ public:
             if ((canStop && patience >= nn->getLossStagnationPatience()) || f < nn->getMinimumError()) {
                 nn->setTrainingFinishReason(f < nn->getMinimumError() ? "Min Error" : "Loss Stagnation");
                 nn->setTrainingEpochNum(k);
+                // Print final epoch if not already printed
+                if (nn->getPrintEpochInterval() > 0 && k % nn->getPrintEpochInterval() != 0) {
+                    auto now = std::chrono::high_resolution_clock::now();
+                    std::chrono::duration<double> currentElapsed = now - startTime;
+                    nn->printTrainingStatus(k, (float)f, valLoss, currentElapsed.count());
+                }
                 break;
             }
             nn->setTrainingEpochNum(k);
+            
+            // Print final epoch if limit reached and not already printed
+            if (k == nn->getMaximumEpochNum() && nn->getPrintEpochInterval() > 0 && k % nn->getPrintEpochInterval() != 0) {
+                auto now = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double> currentElapsed = now - startTime;
+                nn->printTrainingStatus(k, (float)f, valLoss, currentElapsed.count());
+            }
         }
         for(size_t i=0; i<nParams; ++i) x_f.data()[i] = (float)x[i];
         nn->setGlobalParameters(x_f);

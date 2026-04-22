@@ -9,6 +9,7 @@
 #pragma once
 #include "owLayer.hpp"
 #include "../optimizers/owOptimizer.hpp"
+#include "../core/owCuda.hpp"
 #include <random>
 #include <chrono>
 
@@ -182,10 +183,18 @@ public:
      */
     owTensor<float, 2> forward(const owTensor<float, 2>& input) override {
         m_lastInput = input;
-        auto z = input.dot(m_weights);
-        for (size_t i = 0; i < z.shape()[0]; ++i) {
-            for (size_t j = 0; j < z.shape()[1]; ++j) z(i, j) += m_biases(0, j);
+        size_t batchSize = input.shape()[0];
+        owTensor<float, 2> z(batchSize, m_outputSize);
+
+#ifdef OW_USE_GPU
+        cuda::linearForward(input.data(), m_weights.data(), m_biases.data(), z.data(), 
+                           (int)batchSize, (int)m_inputSize, (int)m_outputSize);
+#else
+        z = input.dot(m_weights);
+        for (size_t i = 0; i < batchSize; ++i) {
+            for (size_t j = 0; j < m_outputSize; ++j) z(i, j) += m_biases(0, j);
         }
+#endif
         m_lastZ = z;
         return m_activation ? m_activation->forward(z) : z;
     }

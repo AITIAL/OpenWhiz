@@ -572,20 +572,20 @@ inline void owNeuralNetwork::runStandardTrainingLoop() {
         trainStep();
         m_lastTrainLoss = loss;
 
-        if (m_enablePrinting && epoch % m_printInterval == 0) {
-            std::cout << "Epoch " << epoch << "/" << m_maxEpochs << " - Loss: " << loss;
-            // Print status of expert branches
-            for (auto& layer : m_layers) {
-                auto concat = std::dynamic_pointer_cast<owConcatenateLayer>(layer);
-                if (concat) {
-                    for (auto& branch : concat->getBranches()) {
-                        if (branch->getConvergenceThreshold() > 0) {
-                            std::cout << " | " << branch->getLayerName() << (branch->isFrozen() ? ":DONE" : ":RUN");
-                        }
-                    }
-                }
-            }
-            std::cout << std::endl;
+        // Validation error calculation
+        float valLoss = 0.0f;
+        auto valIn = m_dataset->getValInput();
+        if (valIn.size() > 0) {
+            auto valTarget = m_dataset->getValTarget();
+            auto valPred = forward(valIn);
+            valLoss = calculateLoss(valPred, valTarget);
+            m_lastValLoss = valLoss;
+        }
+
+        if (m_enablePrinting && (epoch == 1 || epoch % m_printInterval == 0)) {
+            auto now = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> currentElapsed = now - startTime;
+            printTrainingStatus(epoch, loss, valLoss, currentElapsed.count());
         }
 
         // Check for stagnation
@@ -600,6 +600,11 @@ inline void owNeuralNetwork::runStandardTrainingLoop() {
             if (patienceCounter >= m_lossStagnationPatience) {
                 m_finishReason = "Loss Stagnation";
                 m_actualEpochs = epoch;
+                if (m_enablePrinting && epoch % m_printInterval != 0) {
+                    auto now = std::chrono::high_resolution_clock::now();
+                    std::chrono::duration<double> currentElapsed = now - startTime;
+                    printTrainingStatus(epoch, loss, valLoss, currentElapsed.count());
+                }
                 break;
             }
         }
@@ -607,14 +612,42 @@ inline void owNeuralNetwork::runStandardTrainingLoop() {
         if (m_minError > 0 && m_lastTrainLoss <= m_minError) {
             m_finishReason = "Min Error";
             m_actualEpochs = epoch;
+            if (m_enablePrinting && epoch % m_printInterval != 0) {
+                auto now = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double> currentElapsed = now - startTime;
+                printTrainingStatus(epoch, loss, valLoss, currentElapsed.count());
+            }
             break;
         }
         
         m_actualEpochs = epoch;
+        m_finishReason = "Epoch Limit";
+        
+        // Final epoch log if not already printed by interval
+        if (epoch == m_maxEpochs && m_enablePrinting && epoch % m_printInterval != 0) {
+            auto now = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> currentElapsed = now - startTime;
+            printTrainingStatus(epoch, loss, valLoss, currentElapsed.count());
+        }
     }
 
     // After training, disable playback mode on all layers so forward/predict uses real input
     for (auto& layer : m_layers) layer->setPlaybackMode(false);
+
+    auto endTime = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = endTime - startTime;
+    m_actualTrainingTime = elapsed.count();
+
+    if (m_enablePrinting) {
+        std::cout << "\n--- Training Summary ---" << std::endl;
+        std::cout << "Finish Reason: " << m_finishReason << std::endl;
+        std::cout << "Total Time: " << m_actualTrainingTime << "s" << std::endl;
+        std::cout << "Total Epochs: " << m_actualEpochs << std::endl;
+        if (m_actualEpochs > 0) {
+            std::cout << "Avg Time/Epoch: " << (m_actualTrainingTime / m_actualEpochs) << "s" << std::endl;
+        }
+        std::cout << "------------------------\n" << std::endl;
+    }
 }
 
 inline EvaluationReport owNeuralNetwork::evaluatePerformance(const owTensor<float, 2>& input, const owTensor<float, 2>& target, float tolerance) {
@@ -722,6 +755,12 @@ inline std::shared_ptr<owActivation> owNeuralNetwork::createActivationByName(con
     if (name == "Tanh") return std::make_shared<owTanhActivation>();
     if (name == "LeakyReLU") return std::make_shared<owLeakyReLUActivation>();
     return std::make_shared<owIdentityActivation>();
+}
+
+inline void owNeuralNetwork::printTrainingStatus(int epoch, float trainLoss, float valLoss, double elapsedTime) {
+    std::cout << "Epoch " << epoch << " | Train Loss: " << trainLoss;
+    if (valLoss > 0.0f) std::cout << " | Val Loss: " << valLoss;
+    std::cout << " | Total Time: " << elapsedTime << "s" << std::endl;
 }
 
 }

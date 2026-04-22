@@ -42,12 +42,6 @@
 #define OW_ALIGNED_FREE(ptr) _aligned_free(ptr)
 #else
 #include <stdlib.h>
-/**
- * @brief Helper for POSIX-compliant aligned memory allocation.
- * @param size Total bytes to allocate.
- * @param alignment Alignment boundary (must be power of 2).
- * @return Pointer to allocated memory.
- */
 static inline void* ow_posix_aligned_alloc(size_t size, size_t alignment) {
     void* ptr = nullptr;
     if (posix_memalign(&ptr, alignment, size) != 0) return nullptr;
@@ -55,6 +49,29 @@ static inline void* ow_posix_aligned_alloc(size_t size, size_t alignment) {
 }
 #define OW_ALIGNED_MALLOC(size, alignment) ow_posix_aligned_alloc(size, alignment)
 #define OW_ALIGNED_FREE(ptr) free(ptr)
+#endif
+
+#ifdef OW_USE_GPU
+#include <cuda_runtime.h>
+#include <stdexcept>
+#include <string>
+
+namespace ow {
+    inline void* ow_cuda_malloc(size_t size) {
+        void* p = nullptr;
+        cudaError_t err = cudaMallocManaged(&p, size);
+        if (err != cudaSuccess) {
+            throw std::runtime_error("CUDA malloc failed");
+        }
+        return p;
+    }
+}
+
+#define OW_MALLOC(size) ow::ow_cuda_malloc(size)
+#define OW_FREE(ptr) cudaFree(ptr)
+#else
+#define OW_MALLOC(size) OW_ALIGNED_MALLOC(size, 64)
+#define OW_FREE(ptr) OW_ALIGNED_FREE(ptr)
 #endif
 
 namespace ow {
@@ -114,7 +131,16 @@ public:
         m_shape[0] = rows; m_shape[1] = cols;
         m_size = rows * cols;
         m_data_ptr = allocate(m_size);
+#ifdef OW_USE_GPU
+        if (init_val == static_cast<T>(0)) {
+            cudaMemset(m_data_ptr, 0, m_size * sizeof(T));
+        } else {
+            for (size_t i = 0; i < m_size; ++i) m_data_ptr[i] = init_val;
+        }
+        cudaDeviceSynchronize();
+#else
         std::fill(m_data_ptr, m_data_ptr + m_size, init_val);
+#endif
     }
 
     /**
@@ -124,6 +150,9 @@ public:
     explicit owTensor(const owTensorShape& shape) : m_shape(shape), m_owns_data(true) {
         m_size = calculate_size(shape);
         m_data_ptr = allocate(m_size);
+#ifdef OW_USE_GPU
+        cudaDeviceSynchronize();
+#endif
     }
     
     /**
@@ -134,7 +163,16 @@ public:
     owTensor(const owTensorShape& shape, T init_val) : m_shape(shape), m_owns_data(true) {
         m_size = calculate_size(shape);
         m_data_ptr = allocate(m_size);
+#ifdef OW_USE_GPU
+        if (init_val == static_cast<T>(0)) {
+            cudaMemset(m_data_ptr, 0, m_size * sizeof(T));
+        } else {
+            for (size_t i = 0; i < m_size; ++i) m_data_ptr[i] = init_val;
+        }
+        cudaDeviceSynchronize();
+#else
         std::fill(m_data_ptr, m_data_ptr + m_size, init_val);
+#endif
     }
 
     /**
@@ -198,7 +236,7 @@ public:
      */
     owTensor& operator=(const owTensor& other) {
         if (this != &other) {
-            if (m_owns_data && m_data_ptr) OW_ALIGNED_FREE(m_data_ptr);
+            if (m_owns_data && m_data_ptr) OW_FREE(m_data_ptr);
             m_shape = other.m_shape;
             m_size = other.m_size;
             m_owns_data = other.m_owns_data;
@@ -219,7 +257,7 @@ public:
      */
     owTensor& operator=(owTensor&& other) noexcept {
         if (this != &other) {
-            if (m_owns_data && m_data_ptr) OW_ALIGNED_FREE(m_data_ptr);
+            if (m_owns_data && m_data_ptr) OW_FREE(m_data_ptr);
             m_shape = other.m_shape;
             m_size = other.m_size;
             m_data_ptr = other.m_data_ptr;
@@ -240,7 +278,7 @@ public:
             if (!std::is_trivially_destructible<T>::value) {
                 for (size_t i = 0; i < m_size; ++i) m_data_ptr[i].~T();
             }
-            OW_ALIGNED_FREE(m_data_ptr);
+            OW_FREE(m_data_ptr);
         }
     }
 
@@ -831,7 +869,7 @@ protected:
      */
     T* allocate(size_t size) {
         if (size == 0) return nullptr;
-        T* ptr = static_cast<T*>(OW_ALIGNED_MALLOC(size * sizeof(T), 64));
+        T* ptr = static_cast<T*>(OW_MALLOC(size * sizeof(T)));
         // Ensure constructor is called for non-trivial types (like std::string)
         if (!std::is_trivially_default_constructible<T>::value) {
             for (size_t i = 0; i < size; ++i) new (&ptr[i]) T();
