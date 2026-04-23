@@ -48,10 +48,10 @@ int main() {
     // Create standard architecture: {64, 32, 1} with ReLU hidden and Identity output
     nn.createNeuralNetwork(ow::owProjectType::FORECASTING, {64, 32});
 
-    nn.setOptimizer(std::make_shared<ow::owADAMOptimizer>(0.001f));
+    nn.setOptimizer(std::make_shared<ow::owLBFGSOptimizer>(0.0005f));
     nn.setLoss(std::make_shared<ow::owHuberLoss>(1.0f));
     nn.setMaximumEpochNum(1000);
-    nn.setPrintEpochInterval(200);
+    nn.setPrintEpochInterval(5);
 
     // --- 3. TRAINING ---
     std::cout << "Training..." << std::endl;
