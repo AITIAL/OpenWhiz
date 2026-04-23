@@ -63,19 +63,22 @@ public:
      * @brief Core mode logic: Store in epoch 1, Replay in epoch 2+, Pass-through for inference.
      */
     owTensor<float, 2> forward(const owTensor<float, 2>& input) override {
-        if (!m_isFull) {
+        if (!m_isFull && m_isTraining) {
             // --- RECORDING MODE ---
+            // Only record during the first training epoch
             m_cachedInputs.push_back(input);
             if (m_localTarget) m_cachedTargets.push_back(*m_localTarget); 
             m_inputDim = input.shape()[1];
             return input;
-        } else if (m_playbackMode) {
+        } else if (m_playbackMode && m_isTraining) {
             // --- PLAYBACK MODE (High Speed Training) ---
+            // Only used during training epochs 2-N
+            if (m_indices.empty()) return input; 
             size_t idx = m_indices[m_currentBatchIdx];
-            m_currentBatchIdx = (m_currentBatchIdx + 1) % m_cachedInputs.size();
+            m_currentBatchIdx = (m_currentBatchIdx + 1) % m_indices.size();
             return m_cachedInputs[idx];
         } else {
-            // --- PASS-THROUGH MODE (Inference / Evaluation) ---
+            // --- PASS-THROUGH MODE (Inference / Evaluation / Validation) ---
             return input;
         }
     }

@@ -22,6 +22,10 @@ inline void owNeuralNetwork::setDataset(std::shared_ptr<owDataset> ds) { m_datas
 inline owDataset* owNeuralNetwork::getDataset() { return m_dataset.get(); }
 inline bool owNeuralNetwork::loadData(const std::string& filename, bool hasHeader, bool autoNormalize) { return m_dataset->loadFromCSV(filename, hasHeader, autoNormalize); }
 
+inline void owNeuralNetwork::setTraining(bool training) {
+    for (auto& layer : m_layers) layer->setTraining(training);
+}
+
 inline void owNeuralNetwork::setRegularization(int type) { m_regType = type; for (auto& layer : m_layers) layer->setRegularization(type); }
 inline void owNeuralNetwork::addLayer(std::shared_ptr<owLayer> layer) {
     if (layer) { 
@@ -495,6 +499,7 @@ inline void owNeuralNetwork::train() {
     if (!m_dataset || !m_optimizer || !m_loss) return;
 
     auto startTime = std::chrono::high_resolution_clock::now();
+    setTraining(true); // Ensure all layers are in training mode
 
     if (m_optimizer->supportsGlobalOptimization()) {
         m_optimizer->optimizeGlobal(this, m_dataset.get());
@@ -502,6 +507,7 @@ inline void owNeuralNetwork::train() {
         runStandardTrainingLoop();
     }
 
+    setTraining(false); // Switch to inference mode after training
     // After training, disable playback mode on all layers so forward/predict uses real input
     for (auto& layer : m_layers) layer->setPlaybackMode(false);
 
@@ -530,6 +536,7 @@ inline void owNeuralNetwork::runStandardTrainingLoop() {
     int patienceCounter = 0;
 
     for (int epoch = 1; epoch <= m_maxEpochs; ++epoch) {
+        setTraining(true);
         reset(); 
         
         /**
@@ -606,10 +613,12 @@ inline void owNeuralNetwork::runStandardTrainingLoop() {
         float valLoss = 0.0f;
         auto valIn = m_dataset->getValInput();
         if (valIn.size() > 0) {
+            setTraining(false); // Switch to evaluation for validation pass
             auto valTarget = m_dataset->getValTarget();
             auto valPred = forward(valIn);
             valLoss = calculateLoss(valPred, valTarget);
             m_lastValLoss = valLoss;
+            setTraining(true); // Switch back to training
         }
 
         if (m_enablePrinting && (epoch == 1 || epoch % m_printInterval == 0)) {
@@ -640,7 +649,7 @@ inline void owNeuralNetwork::runStandardTrainingLoop() {
         }
 
         if (m_minError > 0 && m_lastTrainLoss <= m_minError) {
-            m_finishReason = "Min Error";
+            m_finishReason = "Minimum Error";
             m_actualEpochs = epoch;
             if (m_enablePrinting && epoch % m_printInterval != 0) {
                 auto now = std::chrono::high_resolution_clock::now();
@@ -651,7 +660,7 @@ inline void owNeuralNetwork::runStandardTrainingLoop() {
         }
         
         m_actualEpochs = epoch;
-        m_finishReason = "Epoch Limit";
+        m_finishReason = "Maximum Epoch Num";
         
         // Final epoch log if not already printed by interval
         if (epoch == m_maxEpochs && m_enablePrinting && epoch % m_printInterval != 0) {
@@ -664,6 +673,7 @@ inline void owNeuralNetwork::runStandardTrainingLoop() {
 
 inline EvaluationReport owNeuralNetwork::evaluatePerformance(const owTensor<float, 2>& input, const owTensor<float, 2>& target, float tolerance) {
     EvaluationReport report;
+    setTraining(false); // Ensure we are in evaluation mode
     reset(); // Clear state for evaluation
     auto pred = forward(input);
     size_t n = input.shape()[0];
