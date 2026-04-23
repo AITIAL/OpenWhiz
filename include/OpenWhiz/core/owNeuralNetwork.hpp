@@ -556,7 +556,7 @@ private:
     double m_actualTrainingTime = 0.0;
     float m_lastTrainLoss = 0.0f;
     float m_lastValLoss = 0.0f;
-    std::string m_finishReason = "None";
+    std::string m_finishReason = "Maximum Epoch Num";
     bool m_isPartiallyFitted = false;
     
     int m_printInterval = 5;
