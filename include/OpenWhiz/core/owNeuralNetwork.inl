@@ -528,12 +528,24 @@ inline void owNeuralNetwork::train() {
 
         std::cout << "\n--- Training Summary ---" << std::endl;
         std::cout << "Finish Reason: " << m_finishReason << std::endl;
-        std::cout << "Train Loss: " << std::fixed << std::setprecision(2) << trainMAPE << "% (MAPE)" << std::endl;
-        if (vIn.shape()[0] > 0) std::cout << "Val Loss: " << std::fixed << std::setprecision(2) << valMAPE << "% (MAPE)" << std::endl;
-        std::cout << "Total Time: " << m_actualTrainingTime << "s" << std::endl;
+        std::cout << "Avg. Train Loss: " << std::fixed << std::setprecision(2) << trainMAPE << "% (MAPE)" << std::endl;
+        if (vIn.shape()[0] > 0) std::cout << "Avg. Val Loss: " << std::fixed << std::setprecision(2) << valMAPE << "% (MAPE)" << std::endl;
+        std::cout << "Total Time: ";
+        if (m_actualTrainingTime < 60.0) {
+            std::cout << std::fixed << std::setprecision(2) << m_actualTrainingTime << "s" << std::endl;
+        } else if (m_actualTrainingTime < 3600.0) {
+            int m = static_cast<int>(m_actualTrainingTime) / 60;
+            double s = std::fmod(m_actualTrainingTime, 60.0);
+            std::cout << m << "m " << std::fixed << std::setprecision(2) << s << "s" << std::endl;
+        } else {
+            int h = static_cast<int>(m_actualTrainingTime) / 3600;
+            int m = (static_cast<int>(m_actualTrainingTime) % 3600) / 60;
+            double s = std::fmod(m_actualTrainingTime, 60.0);
+            std::cout << h << "h " << m << "m " << std::fixed << std::setprecision(2) << s << "s" << std::endl;
+        }
         std::cout << "Total Epochs: " << m_actualEpochs << std::endl;
         if (m_actualEpochs > 0) {
-            std::cout << "Avg Time/Epoch: " << (m_actualTrainingTime / m_actualEpochs) << "s" << std::endl;
+            std::cout << "Avg Time/Epoch: " << std::fixed << std::setprecision(2) << (m_actualTrainingTime / m_actualEpochs) * 1000.0 << "ms" << std::endl;
         }
         std::cout << "------------------------\n" << std::endl;
     }
