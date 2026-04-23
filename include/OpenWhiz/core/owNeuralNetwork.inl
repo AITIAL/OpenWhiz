@@ -516,8 +516,20 @@ inline void owNeuralNetwork::train() {
     m_actualTrainingTime = elapsed.count();
 
     if (m_enablePrinting) {
+        auto trainReport = evaluatePerformance(m_dataset->getTrainInput(), m_dataset->getTrainTarget());
+        float trainMAPE = trainReport.mape;
+
+        float valMAPE = 0.0f;
+        auto vIn = m_dataset->getValInput();
+        if (vIn.shape()[0] > 0) {
+            auto valReport = evaluatePerformance(vIn, m_dataset->getValTarget());
+            valMAPE = valReport.mape;
+        }
+
         std::cout << "\n--- Training Summary ---" << std::endl;
         std::cout << "Finish Reason: " << m_finishReason << std::endl;
+        std::cout << "Train Loss: " << std::fixed << std::setprecision(2) << trainMAPE << "% (MAPE)" << std::endl;
+        if (vIn.shape()[0] > 0) std::cout << "Val Loss: " << std::fixed << std::setprecision(2) << valMAPE << "% (MAPE)" << std::endl;
         std::cout << "Total Time: " << m_actualTrainingTime << "s" << std::endl;
         std::cout << "Total Epochs: " << m_actualEpochs << std::endl;
         if (m_actualEpochs > 0) {
