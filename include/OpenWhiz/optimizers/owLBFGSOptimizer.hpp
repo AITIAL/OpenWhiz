@@ -243,7 +243,7 @@ public:
             }
 
             if ((canStop && patience >= nn->getLossStagnationPatience()) || f < nn->getMinimumError()) {
-                nn->setTrainingFinishReason(f < nn->getMinimumError() ? "Min Error" : "Loss Stagnation");
+                nn->setTrainingFinishReason(f < nn->getMinimumError() ? "Minimum Error" : "Loss Stagnation");
                 nn->setTrainingEpochNum(k);
                 // Print final epoch if not already printed
                 if (nn->getPrintEpochInterval() > 0 && k % nn->getPrintEpochInterval() != 0) {
@@ -253,7 +253,9 @@ public:
                 }
                 break;
             }
+            
             nn->setTrainingEpochNum(k);
+            nn->setTrainingFinishReason("Maximum Epoch Num");
 
             // Print final epoch if limit reached and not already printed
             if (k == nn->getMaximumEpochNum() && nn->getPrintEpochInterval() > 0 && k % nn->getPrintEpochInterval() != 0) {

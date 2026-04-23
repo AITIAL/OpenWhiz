@@ -649,7 +649,7 @@ inline void owNeuralNetwork::runStandardTrainingLoop() {
         }
 
         if (m_minError > 0 && m_lastTrainLoss <= m_minError) {
-            m_finishReason = "Min Error";
+            m_finishReason = "Minimum Error";
             m_actualEpochs = epoch;
             if (m_enablePrinting && epoch % m_printInterval != 0) {
                 auto now = std::chrono::high_resolution_clock::now();
@@ -660,7 +660,7 @@ inline void owNeuralNetwork::runStandardTrainingLoop() {
         }
         
         m_actualEpochs = epoch;
-        m_finishReason = "Epoch Limit";
+        m_finishReason = "Maximum Epoch Num";
         
         // Final epoch log if not already printed by interval
         if (epoch == m_maxEpochs && m_enablePrinting && epoch % m_printInterval != 0) {
