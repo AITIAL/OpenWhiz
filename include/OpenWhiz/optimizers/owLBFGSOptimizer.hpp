@@ -47,9 +47,12 @@ class owDataset;
  * modeling where accuracy is paramount and RAM is sufficient (e.g., HPC
  * or engineering workstations).
  * @note **Mobile/Web Use:** Generally NOT recommended due to the high RAM
- * usage and the need for frequent full-dataset evaluations.
+ *   usage and the need for frequent full-dataset evaluations.
+ * 
+ * @important **GPU Compatibility:** L-BFGS is currently only supported in CPU mode. 
+ * For GPU acceleration (OW_USE_GPU), please use owADAMOptimizer.
  */
-class owLBFGSOptimizer : public owOptimizer {
+ class owLBFGSOptimizer : public owOptimizer {
 private:
     size_t m_m = 100; ///< Increased history size for better Hessian approximation.
     std::deque<std::vector<double>> s_list; ///< Difference in parameters (history).
