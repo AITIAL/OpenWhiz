@@ -504,6 +504,17 @@ public:
     void partialFit(const owTensor<float, 2>& input, const owTensor<float, 2>& target, int steps = 1);
 
     /**
+     * @brief Toggles training mode for the entire network.
+     * 
+     * Propagates the training status to all layers. This is essential for 
+     * stateful layers (CacheLayer, Dropout) that behave differently 
+     * during training vs. validation or inference.
+     * 
+     * @param training True to enable training mode, false for evaluation.
+     */
+    void setTraining(bool training);
+
+    /**
      * @brief Saves the current model architecture and weights to an XML file.
      */
     bool saveToXML(const std::string& filename);

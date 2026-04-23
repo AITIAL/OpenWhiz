@@ -278,11 +278,18 @@ public:
     /** @return Pointer to the parent neural network. */
     owNeuralNetwork* getParentNetwork() const { return m_parentNetwork; }
 
+    /** @brief Toggles training mode for this layer. */
+    virtual void setTraining(bool training) { m_isTraining = training; }
+
+    /** @return True if the layer is currently in training mode. */
+    bool isTraining() const { return m_isTraining; }
+
 protected:
     std::string m_layerName = "Base Layer";
     owNeuralNetwork* m_parentNetwork = nullptr;
     bool m_isIndependentExpertMode = false;
     bool m_isFrozen = false; 
+    bool m_isTraining = true; 
     float m_convergenceThreshold = 0.0f;
     const owTensor<float, 2>* m_localTarget = nullptr; 
     float m_localExpertWeight = 1.0f;
