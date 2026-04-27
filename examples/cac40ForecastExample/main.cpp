@@ -28,7 +28,7 @@ int main() {
 
     // --- 1. DATASET SETUP ---
     auto dataset = std::make_shared<ow::owDataset>();
-    // Load and normalize in-place (x = (x-min)/(max-min))
+    // Load and normalize in-place for stable gradients
     if (!dataset->loadFromCSV(csvFile, true, true)) {
         std::cerr << "Failed to load CSV file." << std::endl;
         return -1;
@@ -37,9 +37,13 @@ int main() {
     dataset->setColumnUsage("Date", ow::ColumnUsage::UNUSED);
     dataset->setTargetVariableNum(1);
     
-    // Prepare sliding window: Input features become [T-5, T-4, T-3, T-2, T-1], Target is [T]
+    // Prepare sliding window
     int windowSize = 5;
     dataset->prepareForecastData(windowSize);
+
+    // --- EXPORT FOR COMPARISON ---
+    dataset->saveToCSV("cachedataset_traditional.csv", "Date");
+    std::cout << "Exported traditional dataset to cachedataset_traditional.csv" << std::endl;
 
     // --- 2. ARCHITECTURE ---
     ow::owNeuralNetwork nn;
@@ -48,9 +52,11 @@ int main() {
     // Create standard architecture: {64, 32, 1} with ReLU hidden and Identity output
     nn.createNeuralNetwork(ow::owProjectType::FORECASTING, {64, 32});
 
-    nn.setOptimizer(std::make_shared<ow::owLBFGSOptimizer>(0.0005f));
-    nn.setLoss(std::make_shared<ow::owHuberLoss>(1.0f));
+    nn.setOptimizer(std::make_shared<ow::owLBFGSOptimizer>(0.1f));
+    nn.setLoss(std::make_shared<ow::owMeanSquaredErrorLoss>());
     nn.setMaximumEpochNum(1000);
+    nn.setMinimumPercentageError(0.0001f); // Effectively disable stopping
+    nn.setLossStagnationTolerance(0.0f);   // Force training through every epoch
     nn.setPrintEpochInterval(5);
 
     // --- 3. TRAINING ---
