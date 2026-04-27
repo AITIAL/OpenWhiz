@@ -55,31 +55,30 @@ public:
         owTensor<float, 2> output(batchSize, getOutputSize());
         
         for (size_t i = 0; i < batchSize; ++i) {
-            // Push current sample (using the first feature as the history reference, 
-            // or we could configure which column to track). 
-            // By default, we track the first column of the input for history.
-            m_buffer.push_back(input(i, 0));
-            if (m_buffer.size() > m_windowSize * m_dilation) {
-                m_buffer.pop_front();
-            }
-
-            // Fill History
+            // Fill History using ALREADY buffered samples (T-1, T-2...)
+            // This prevents using the current input T to predict current target T
             for (size_t w = 0; w < m_windowSize; ++w) {
-                size_t idx = w * m_dilation;
-                if (idx < m_buffer.size()) {
+                if (m_buffer.size() >= (m_windowSize - w) * m_dilation) {
                     // We want chronological order: oldest to newest
-                    size_t bufferIdx = m_buffer.size() - 1 - (m_windowSize - 1 - w) * m_dilation;
-                    output(i, w) = (bufferIdx < m_buffer.size()) ? m_buffer[bufferIdx] : 0.0f;
+                    // Buffer contains samples up to T-1
+                    size_t bufferIdx = m_buffer.size() - (m_windowSize - w) * m_dilation;
+                    output(i, w) = m_buffer[bufferIdx];
                 } else {
                     output(i, w) = 0.0f;
                 }
             }
 
-            // Append Current Features
+            // Append Current Features if requested (non-target features)
             if (m_includeCurrent) {
                 for (size_t f = 0; f < m_inputFeatures; ++f) {
                     output(i, m_windowSize + f) = input(i, f);
                 }
+            }
+
+            // Push current sample to buffer for use in FUTURE time steps (T+1, T+2...)
+            m_buffer.push_back(input(i, 0));
+            if (m_buffer.size() > m_windowSize * m_dilation) {
+                m_buffer.pop_front();
             }
         }
         return output;
