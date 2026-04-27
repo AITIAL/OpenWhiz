@@ -288,12 +288,13 @@ public:
 
     std::vector<int> getUsedColumnIndices(bool includeTarget = false) const {
         std::vector<int> indices;
+        int inputColsBoundary = (int)m_columns.size() - m_targetVariableNum;
+
         if (!includeTarget) {
-            for (int i = 0; i < (int)m_columns.size(); ++i) {
+            for (int i = 0; i < inputColsBoundary; ++i) {
                 if (m_columns[i].usage == ColumnUsage::USED) indices.push_back(i);
             }
         } else {
-            int inputColsBoundary = (int)m_columns.size() - m_targetVariableNum;
             for (int i = inputColsBoundary; i < (int)m_columns.size(); ++i) {
                 indices.push_back(i);
             }
@@ -302,13 +303,38 @@ public:
     }
 
     int getInputVariableNum() const { 
-        int count = 0;
-        for (const auto& col : m_columns) if (col.usage == ColumnUsage::USED) count++;
-        return count;
+        return (int)getUsedColumnIndices(false).size();
     }
 
     size_t getSampleNum() const { return m_fullData.shape()[0]; }
     owTensor<float, 2> getData() const { return m_fullData; }
+
+    /** @return The original name of the column at the specified index. */
+    std::string getColumnName(int colIdx) const {
+        if (colIdx < 0 || (size_t)colIdx >= m_columns.size()) return "Unknown";
+        return m_columns[colIdx].name;
+    }
+
+    /** @return The index of the column with the given name, or -1 if not found. */
+    int getColumnIndex(const std::string& name) const {
+        std::string target = trim(name);
+        for (size_t i = 0; i < m_columns.size(); ++i) {
+            if (trim(m_columns[i].name) == target) return (int)i;
+        }
+        return -1;
+    }
+
+    /** @return All values in a column converted to their original string representation. */
+    std::vector<std::string> getColumnAsStrings(int colIdx) const {
+        std::vector<std::string> res;
+        if (colIdx < 0 || (size_t)colIdx >= m_columns.size()) return res;
+        size_t rows = m_fullData.shape()[0];
+        res.reserve(rows);
+        for (size_t r = 0; r < rows; ++r) {
+            res.push_back(getLabelName(colIdx, m_fullData(r, (size_t)colIdx)));
+        }
+        return res;
+    }
 
     void normalizeData() {
         if (m_fullData.size() == 0) return;
@@ -316,6 +342,8 @@ public:
         size_t rows = m_fullData.shape()[0];
         size_t cols = m_fullData.shape()[1];
         for (size_t c = 0; c < cols; ++c) {
+            if (m_columns[c].type != DataType::Numeric) continue; // Skip non-numeric columns
+            
             float minVal = m_columns[c].min;
             float maxVal = m_columns[c].max;
             float range = maxVal - minVal;
@@ -365,8 +393,15 @@ public:
         m_fullData = newData;
         m_sampleTypes = newSampleTypes;
         std::vector<ColumnInfo> newColumns;
+        std::string refName = m_columns[referenceCol].name;
+        float refMin = m_columns[referenceCol].min;
+        float refMax = m_columns[referenceCol].max;
+
         for (int w = 0; w < windowSize; ++w) {
-            newColumns.push_back({"History_" + std::to_string(windowSize - w), DataType::Numeric, Ordering::Standard, ColumnUsage::USED});
+            ColumnInfo lagCol = {refName + "_lag" + std::to_string(windowSize - w), DataType::Numeric, Ordering::Standard, ColumnUsage::USED};
+            lagCol.min = refMin;
+            lagCol.max = refMax;
+            newColumns.push_back(lagCol);
         }
         for (const auto& col : m_columns) newColumns.push_back(col);
         m_columns = newColumns;
@@ -464,6 +499,56 @@ public:
         if (m_sampleTypes[index] == SampleType::Training) return "Training";
         if (m_sampleTypes[index] == SampleType::Validation) return "Validation";
         return "Testing";
+    }
+
+    /**
+     * @brief Exports the current state of the dataset to a CSV file.
+     * @param filepath Path to the output CSV file.
+     * @param dateColumnName Optional: Name of the column to use as the first Date column.
+     */
+    bool saveToCSV(const std::string& filepath, const std::string& dateColumnName = "") const {
+        if (m_fullData.size() == 0) return false;
+        std::ofstream file(filepath);
+        if (!file.is_open()) return false;
+
+        std::vector<int> usedIndices;
+        for (int i = 0; i < (int)m_columns.size(); ++i) {
+            // If it's the date column and we're prefixing with it, don't include it in the data section
+            if (!dateColumnName.empty() && trim(m_columns[i].name) == trim(dateColumnName)) continue;
+            if (m_columns[i].usage == ColumnUsage::USED) {
+                usedIndices.push_back(i);
+            }
+        }
+
+        // 1. Write Header
+        if (!dateColumnName.empty()) {
+            file << dateColumnName << m_delimiter;
+        }
+        for (size_t i = 0; i < usedIndices.size(); ++i) {
+            file << m_columns[usedIndices[i]].name << (i == usedIndices.size() - 1 ? "" : std::string(1, m_delimiter));
+        }
+        file << "\n";
+
+        // 2. Write Data
+        size_t rows = m_fullData.shape()[0];
+        std::vector<std::string> dates;
+        if (!dateColumnName.empty()) {
+            int dateIdx = getColumnIndex(dateColumnName);
+            if (dateIdx != -1) dates = getColumnAsStrings(dateIdx);
+        }
+
+        for (size_t r = 0; r < rows; ++r) {
+            if (!dates.empty() && r < dates.size()) {
+                file << dates[r] << m_delimiter;
+            }
+            for (size_t i = 0; i < usedIndices.size(); ++i) {
+                int colIdx = usedIndices[i];
+                file << std::fixed << std::setprecision(6) << m_fullData(r, (size_t)colIdx) << (i == usedIndices.size() - 1 ? "" : std::string(1, m_delimiter));
+            }
+            file << "\n";
+        }
+        file.close();
+        return true;
     }
 
 private:
