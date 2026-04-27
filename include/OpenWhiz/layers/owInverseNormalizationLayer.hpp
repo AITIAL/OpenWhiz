@@ -119,6 +119,7 @@ public:
      * @return Denormalized output tensor.
      */
     owTensor<float, 2> forward(const owTensor<float, 2>& input) override {
+        if (!m_enabled) return input; // Pass-through if disabled
         if (m_size == 0 || m_min.size() == 0) autoConfigure();
         if (m_size == 0) return input;
 

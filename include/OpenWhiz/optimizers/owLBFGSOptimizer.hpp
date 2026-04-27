@@ -105,11 +105,20 @@ public:
         std::vector<double> x(nParams), g(nParams), d(nParams), x_next(nParams);
         for(size_t i=0; i<nParams; ++i) x[i] = (double)x_f.data()[i];
 
+        bool firstPass = true;
         auto compute_f_g = [&](const std::vector<double>& cur_x, std::vector<double>& cur_g) {
             for(size_t i=0; i<nParams; ++i) x_f.data()[i] = (float)cur_x[i];
             nn->setGlobalParameters(x_f);
             nn->reset(); // Clear state (like sliding window history) for consistent evaluation
             auto pred = nn->forward(trainIn);
+            
+            // After the very first forward pass, we signal all layers to lock their cache.
+            // This is essential for owCacheLayer to stop recording and switch to playback.
+            if (firstPass) {
+                for (auto& layer : nn->getLayers()) layer->lockCache();
+                firstPass = false;
+            }
+
             float loss = nn->calculateLoss(pred, trainTarget);
             nn->reset(); // Clear state again before backward to ensure it uses fresh forward path
             nn->forward(trainIn); // Re-run forward to populate state for backward pass
@@ -118,6 +127,9 @@ public:
             for(size_t i=0; i<nParams; ++i) cur_g[i] = (double)g_f.data()[i];
             return (double)loss;
         };
+
+        // Ensure all layers have access to the target tensor for local loss/caching
+        for (auto& layer : nn->getLayers()) layer->setTarget(&trainTarget);
 
         double f = compute_f_g(x, g);
         double bestLoss = f;
@@ -225,6 +237,31 @@ public:
                 auto valPred = nn->forward(valIn);
                 valLoss = nn->calculateLoss(valPred, valTarget);
                 nn->setLastValError(valLoss);
+            }
+
+            // --- MAPE Based Stopping ---
+            if (nn->getMinimumPercentageError() > 0.0f) {
+                float currentMape = 0.0f;
+                // Compute current predictions to get MAPE
+                auto pred = nn->forward(trainIn);
+                size_t n = pred.shape()[0], outDim = pred.shape()[1];
+                for (size_t i = 0; i < n; ++i) {
+                    for (size_t j = 0; j < outDim; ++j) {
+                        float p = pred(i, j), t = trainTarget(i, j);
+                        if (std::abs(t) > 1e-7f) currentMape += std::abs((p - t) / t);
+                    }
+                }
+                currentMape = (currentMape / (n * outDim)) * 100.0f;
+                if (currentMape <= nn->getMinimumPercentageError()) {
+                    nn->setTrainingFinishReason("Minimum Error");
+                    nn->setTrainingEpochNum(k);
+                    if (nn->getPrintEpochInterval() > 0 && k % nn->getPrintEpochInterval() != 0) {
+                        auto now = std::chrono::high_resolution_clock::now();
+                        std::chrono::duration<double> currentElapsed = now - startTime;
+                        nn->printTrainingStatus(k, (float)f, valLoss, currentElapsed.count());
+                    }
+                    break;
+                }
             }
 
             if (nn->getPrintEpochInterval() > 0 && (k == 1 || k % nn->getPrintEpochInterval() == 0)) {

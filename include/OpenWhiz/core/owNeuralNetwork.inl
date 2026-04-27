@@ -122,12 +122,12 @@ inline void owNeuralNetwork::backward(const owTensor<float, 2>& prediction, cons
     owTensor<float, 2> grad = m_loss->gradient(prediction, target);
     
     // Global Gradient Clipping: Scale down if the gradient norm is too high
-    // This helps stability when targets are large (like in airfoil noise)
+    // Use a higher threshold to accommodate raw price scales in forecasting.
     float gradNormSq = 0;
     for (size_t i = 0; i < grad.size(); ++i) gradNormSq += grad.data()[i] * grad.data()[i];
     float gradNorm = std::sqrt(gradNormSq);
-    if (gradNorm > 10.0f) {
-        float scale = 10.0f / gradNorm;
+    if (gradNorm > 1000.0f) {
+        float scale = 1000.0f / gradNorm;
         for (size_t i = 0; i < grad.size(); ++i) grad.data()[i] *= scale;
     }
 
@@ -499,7 +499,35 @@ inline void owNeuralNetwork::train() {
     if (!m_dataset || !m_optimizer || !m_loss) return;
 
     auto startTime = std::chrono::high_resolution_clock::now();
-    setTraining(true); // Ensure all layers are in training mode
+    setTraining(true); 
+
+    /**
+     * @brief PRE-CACHING PASS (Full Dataset)
+     * To ensure owCacheLayer contains all samples (not just training split),
+     * we perform a single forward pass with the entire dataset.
+     */
+    bool hasCache = false;
+    for (auto& l : m_layers) if (l->getLayerName() == "Cache Layer") { hasCache = true; break; }
+    
+    if (hasCache) {
+        auto fullData = m_dataset->getData();
+        std::vector<int> inputIndices = m_dataset->getUsedColumnIndices(false);
+        std::vector<int> targetIndices = m_dataset->getUsedColumnIndices(true);
+        
+        owTensor<float, 2> fullIn(fullData.shape()[0], inputIndices.size());
+        owTensor<float, 2> fullTarget(fullData.shape()[0], targetIndices.size());
+        
+        for (size_t i = 0; i < fullData.shape()[0]; ++i) {
+            for (size_t j = 0; j < inputIndices.size(); ++j) fullIn(i, j) = fullData(i, (size_t)inputIndices[j]);
+            for (size_t j = 0; j < targetIndices.size(); ++j) fullTarget(i, j) = fullData(i, (size_t)targetIndices[j]);
+        }
+
+        reset(); // Clear sliding window buffers etc.
+        for (auto& l : m_layers) l->setTarget(&fullTarget);
+        forward(fullIn);
+        for (auto& l : m_layers) l->lockCache();
+        reset(); // Reset again for actual training
+    }
 
     if (m_optimizer->supportsGlobalOptimization()) {
         m_optimizer->optimizeGlobal(this, m_dataset.get());
@@ -563,6 +591,9 @@ inline void owNeuralNetwork::runStandardTrainingLoop() {
         setTraining(true);
         reset(); 
         
+        float loss = 0.0f;
+        float valLoss = 0.0f;
+        
         /**
          * TARGET SYNCHRONIZATION:
          * Provides each layer with a reference to the global target tensor.
@@ -591,8 +622,31 @@ inline void owNeuralNetwork::runStandardTrainingLoop() {
             activeTarget = &activeCache->getActiveTarget();
         }
 
-        float loss = calculateLoss(pred, *activeTarget);
+        loss = calculateLoss(pred, *activeTarget);
         backward(pred, *activeTarget);
+        
+        // --- MAPE Based Stopping ---
+        if (m_minMape > 0.0f) {
+            float currentMape = 0.0f;
+            size_t n = pred.shape()[0], outDim = pred.shape()[1];
+            for (size_t i = 0; i < n; ++i) {
+                for (size_t j = 0; j < outDim; ++j) {
+                    float p = pred(i, j), t = (*activeTarget)(i, j);
+                    if (std::abs(t) > 1e-7f) currentMape += std::abs((p - t) / t);
+                }
+            }
+            currentMape = (currentMape / (n * outDim)) * 100.0f;
+            if (currentMape <= m_minMape) {
+                m_finishReason = "Minimum Error";
+                m_actualEpochs = epoch;
+                if (m_enablePrinting && epoch % m_printInterval != 0) {
+                    auto now = std::chrono::high_resolution_clock::now();
+                    std::chrono::duration<double> currentElapsed = now - startTime;
+                    printTrainingStatus(epoch, loss, valLoss, currentElapsed.count());
+                }
+                break;
+            }
+        }
         
         /**
          * RECURSIVE CACHE LOCKING:
@@ -634,7 +688,6 @@ inline void owNeuralNetwork::runStandardTrainingLoop() {
         m_lastTrainLoss = loss;
 
         // Validation error calculation
-        float valLoss = 0.0f;
         auto valIn = m_dataset->getValInput();
         if (valIn.size() > 0) {
             setTraining(false); // Switch to evaluation for validation pass

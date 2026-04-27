@@ -185,10 +185,22 @@ public:
     void setMinimumError(float error) { m_minError = error; }
 
     /**
+     * @brief Sets the minimum MAPE (percentage error) threshold for early stopping.
+     * @param mape Minimum percentage error (e.g., 0.5 for 0.5%). Set to 0.0 to disable.
+     */
+    void setMinimumPercentageError(float mape) { m_minMape = mape; }
+
+    /**
      * @brief Gets the minimum error threshold.
      * @return Float loss value.
      */
     float getMinimumError() const { return m_minError; }
+
+    /**
+     * @brief Gets the minimum MAPE threshold.
+     * @return Percentage value.
+     */
+    float getMinimumPercentageError() const { return m_minMape; }
     
     /**
      * @brief Sets the tolerance for detecting loss stagnation.
@@ -549,6 +561,7 @@ private:
     int m_maxEpochs = 1000;
     double m_maxTime = 0.0;
     float m_minError = 0.001f;
+    float m_minMape = 0.0f;
     float m_lossStagnationTolerance = 0.0005f;
     int m_lossStagnationPatience = 50;
     bool m_lossStagnationEnabled = true;

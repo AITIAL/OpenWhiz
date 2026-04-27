@@ -239,6 +239,12 @@ public:
     /** @return True if the layer's learning is currently disabled. */
     bool isFrozen() const { return m_isFrozen; }
 
+    /** @brief Toggles whether the layer is active or acts as a pass-through identity. */
+    void setEnabled(bool enabled) { m_enabled = enabled; }
+
+    /** @return True if the layer is currently active. */
+    bool isEnabled() const { return m_enabled; }
+
     /** @brief Enables or disables independent expert training for this layer. */
     void setIndependentExpertMode(bool enable) { m_isIndependentExpertMode = enable; }
 
@@ -290,6 +296,7 @@ protected:
     bool m_isIndependentExpertMode = false;
     bool m_isFrozen = false; 
     bool m_isTraining = true; 
+    bool m_enabled = true; 
     float m_convergenceThreshold = 0.0f;
     const owTensor<float, 2>* m_localTarget = nullptr; 
     float m_localExpertWeight = 1.0f;

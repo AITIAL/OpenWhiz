@@ -48,13 +48,15 @@ int main() {
         nn.setDataset(dataset);
 
         // Normalization: x_norm = (x - min) / (max - min)
-        nn.addLayer(std::make_shared<ow::owNormalizationLayer>());
+        auto normLayer = std::make_shared<ow::owNormalizationLayer>();
+        nn.addLayer(normLayer);
         
         // Sliding Window: generate [T-5...T-1] history for predicting T
         nn.addLayer(std::make_shared<ow::owSlidingWindowLayer>(5, 1, false));
         
         // Cache: Record outputs of non-trainable layers to speed up epochs 2-N
-        nn.addLayer(std::make_shared<ow::owCacheLayer>(false)); 
+        auto cacheLayer = std::make_shared<ow::owCacheLayer>(false);
+        nn.addLayer(cacheLayer); 
         
         // Standard hidden layers
         auto layer1 = std::make_shared<ow::owLinearLayer>(0, 64);
@@ -71,16 +73,25 @@ int main() {
         nn.addLayer(outputLayer);
 
         // Inverse Normalization: y_raw = y_norm * (max - min) + min
-        nn.addLayer(std::make_shared<ow::owInverseNormalizationLayer>());
+        auto invNormLayer = std::make_shared<ow::owInverseNormalizationLayer>();
+        nn.addLayer(invNormLayer);
 
         // --- 3. TRAINING SETTINGS ---
-        nn.setOptimizer(std::make_shared<ow::owLBFGSOptimizer>(0.0005f));
-        nn.setLoss(std::make_shared<ow::owHuberLoss>(1.0f));
-        nn.setMaximumEpochNum(3000);
+        nn.setOptimizer(std::make_shared<ow::owLBFGSOptimizer>(0.1f));
+        nn.setLoss(std::make_shared<ow::owMeanSquaredErrorLoss>());
+        nn.setMaximumEpochNum(1000);
+        nn.setMinimumPercentageError(0.05f); // Stop if MAPE < 0.05%
         nn.setPrintEpochInterval(5);
 
         std::cout << "Training..." << std::endl;
         nn.train();
+
+        std::cout << "Saving cached dataset to cachedataset.csv..." << std::endl;
+        
+        // Extract dates to include in the CSV
+        int dateColIdx = dataset->getColumnIndex("Date");
+        std::vector<std::string> dates = dataset->getColumnAsStrings(dateColIdx);
+        cacheLayer->saveToCSV("cachedataset.csv", dates);
 
         double durationMs = nn.getTrainingTime() * 1000.0;
         std::cout << "\nTraining Finished!" << std::endl;

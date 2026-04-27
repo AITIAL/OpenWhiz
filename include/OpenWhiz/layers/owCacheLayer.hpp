@@ -7,27 +7,19 @@
 
 #pragma once
 #include "owLayer.hpp"
+#include "../core/owNeuralNetwork.hpp"
 #include <vector>
 #include <numeric>
 #include <algorithm>
 #include <random>
+#include <fstream>
+#include <sstream>
 
 namespace ow {
 
 /**
  * @class owCacheLayer
- * @brief Performance optimizer that records pre-processed data and replays it.
- * 
- * This layer is designed to be placed after non-trainable preprocessing layers 
- * (like owNormalizationLayer or owSlidingWindowLayer).
- * 
- * OPERATIONAL MODES:
- * 1. RECORDING (Epoch 1): Acts as a pass-through layer while storing every 
- *    input and target tensor in RAM.
- * 2. PLAYBACK (Epochs 2+): Ignores its input and returns stored tensors from memory.
- *    This dramatically speeds up training by avoiding repetitive preprocessing.
- * 3. PASS-THROUGH (Inference): After training, it returns its input directly,
- *    enabling real-time prediction on new data.
+ * @brief Performance optimizer that records pre-processed data for the ENTIRE dataset.
  */
 class owCacheLayer : public owLayer {
 public:
@@ -41,78 +33,163 @@ public:
     void setInputSize(size_t size) override { m_inputDim = size; }
     void setNeuronNum(size_t num) override { m_inputDim = num; }
 
-    /**
-     * @brief Resets the playback pointer to the start of the cache.
-     * Shuffles indices if enabled to provide randomized training batches.
-     */
     void reset() override {
         m_currentBatchIdx = 0;
-        if (m_isFull && m_shuffleEnabled) {
-            std::shuffle(m_indices.begin(), m_indices.end(), m_rng);
-        }
     }
 
     std::shared_ptr<owLayer> clone() const override {
         auto copy = std::make_shared<owCacheLayer>(m_shuffleEnabled);
         copy->m_layerName = m_layerName;
         copy->m_inputDim = m_inputDim;
+        copy->m_parentNetwork = m_parentNetwork;
         return copy;
     }
 
-    /**
-     * @brief Core mode logic: Store in epoch 1, Replay in epoch 2+, Pass-through for inference.
-     */
     owTensor<float, 2> forward(const owTensor<float, 2>& input) override {
         if (!m_isFull && m_isTraining) {
-            // --- RECORDING MODE ---
-            // Only record during the first training epoch
+            if (m_cachedInputs.size() > 0 && input.shape()[0] > m_cachedInputs[0].shape()[0]) {
+                m_cachedInputs.clear();
+                m_cachedTargets.clear();
+            }
             m_cachedInputs.push_back(input);
             if (m_localTarget) m_cachedTargets.push_back(*m_localTarget); 
             m_inputDim = input.shape()[1];
             return input;
-        } else if (m_playbackMode && m_isTraining) {
-            // --- PLAYBACK MODE (High Speed Training) ---
-            // Only used during training epochs 2-N
-            if (m_indices.empty()) return input; 
-            size_t idx = m_indices[m_currentBatchIdx];
-            m_currentBatchIdx = (m_currentBatchIdx + 1) % m_indices.size();
-            return m_cachedInputs[idx];
-        } else {
-            // --- PASS-THROUGH MODE (Inference / Evaluation / Validation) ---
-            return input;
+        } else if (m_playbackMode) {
+            if (m_cachedInputs.empty()) return input;
+            const auto& fullCache = m_cachedInputs[0];
+            return fullCache; 
         }
+        return input;
     }
 
-    /**
-     * @brief Returns the target tensor corresponding to the currently replayed input.
-     * This ensures the loss function compares the replayed input with the correct target.
-     */
     const owTensor<float, 2>& getActiveTarget() const {
         if (!m_isFull || m_cachedTargets.empty()) {
             static owTensor<float, 2> empty;
             return empty;
         }
-        size_t lastIdx = (m_currentBatchIdx == 0) ? m_indices.size() - 1 : m_currentBatchIdx - 1;
-        return m_cachedTargets[m_indices[lastIdx]];
+        return m_cachedTargets[0];
     }
 
-    /** @brief Locks the buffer and initializes training indices. */
     void lockCache() override {
         if (m_cachedInputs.empty()) return;
         m_isFull = true;
         m_playbackMode = true; 
-        m_indices.resize(m_cachedInputs.size());
-        std::iota(m_indices.begin(), m_indices.end(), 0);
-        if (m_shuffleEnabled) std::shuffle(m_indices.begin(), m_indices.end(), m_rng);
     }
 
-    /** @brief Toggles between active playback and transparent mode. */
     void setPlaybackMode(bool enabled) override {
         m_playbackMode = enabled;
     }
 
+    /**
+     * @brief Exports the cached data to a CSV file with smart Header naming.
+     */
+    void saveToCSV(const std::string& filepath, 
+                   const std::vector<std::string>& dates = {},
+                   const std::vector<float>& targets = {}) const {
+        if (m_cachedInputs.empty()) return;
+
+        std::ofstream file(filepath);
+        if (!file.is_open()) return;
+
+        char delim = ';';
+        std::vector<std::string> inputColNames;
+        std::vector<std::string> targetColNames;
+
+        if (m_parentNetwork && m_parentNetwork->getDataset()) {
+            auto* ds = m_parentNetwork->getDataset();
+            delim = ds->getDelimiter();
+            
+            auto inIndices = ds->getUsedColumnIndices(false);
+            auto outIndices = ds->getUsedColumnIndices(true);
+            
+            for(int idx : inIndices) inputColNames.push_back(ds->getColumnName(idx));
+            for(int idx : outIndices) targetColNames.push_back(ds->getColumnName(idx));
+        }
+
+        owTensor<float, 2> tMin, tMax;
+        bool useTargetNorm = false;
+        if (m_parentNetwork) {
+            for (auto& l : m_parentNetwork->getLayers()) {
+                if (l->getLayerName() == "Inverse Normalization Layer" && l->isEnabled()) {
+                    useTargetNorm = true;
+                    m_parentNetwork->getTargetMinMax(tMin, tMax);
+                    break;
+                }
+            }
+        }
+
+        const auto& inputBatch = m_cachedInputs[0];
+        const auto& targetBatch = m_cachedTargets.empty() ? owTensor<float, 2>() : m_cachedTargets[0];
+        
+        // 1. Write Header Row with Lag suffixes
+        if (!dates.empty()) file << "Date" << delim;
+        
+        size_t totalInputFeatures = inputBatch.shape()[1];
+        size_t originalInputCount = inputColNames.empty() ? 1 : inputColNames.size();
+        size_t windowSize = totalInputFeatures / originalInputCount;
+
+        for (size_t j = 0; j < totalInputFeatures; ++j) {
+            size_t origIdx = j % originalInputCount;
+            size_t lag = windowSize - (j / originalInputCount);
+            std::string baseName = inputColNames.empty() ? "Input" : inputColNames[origIdx];
+            file << baseName << "_lag" << lag << delim;
+        }
+
+        size_t tCount = targetBatch.size() > 0 ? targetBatch.shape()[1] : (targets.empty() ? 0 : 1);
+        for (size_t j = 0; j < tCount; ++j) {
+            std::string baseName = targetColNames.empty() ? "Target" : targetColNames[j];
+            file << baseName << (j == tCount - 1 ? "" : std::string(1, delim));
+        }
+        file << "\n";
+
+        // 2. Write Data Rows
+        size_t globalRowIdx = 0;
+        size_t rows = inputBatch.shape()[0];
+        bool recordingStarted = false;
+
+        for (size_t r = 0; r < rows; ++r) {
+            if (!recordingStarted) {
+                if (std::abs(inputBatch(r, 0)) > 1e-7f) {
+                    recordingStarted = true;
+                } else {
+                    globalRowIdx++;
+                    continue;
+                }
+            }
+
+            if (!dates.empty() && globalRowIdx < dates.size()) {
+                file << dates[globalRowIdx] << delim;
+            }
+
+            for (size_t j = 0; j < inputBatch.shape()[1]; ++j) {
+                file << inputBatch(r, j) << delim;
+            }
+
+            if (!targets.empty() && globalRowIdx < targets.size()) {
+                float val = targets[globalRowIdx];
+                if (useTargetNorm && tMin.size() > 0) {
+                    float range = tMax(0, 0) - tMin(0, 0);
+                    val = (val - tMin(0, 0)) / (std::abs(range) < 1e-7f ? 1.0f : range);
+                }
+                file << val;
+            } else if (targetBatch.size() > 0 && r < targetBatch.shape()[0]) {
+                for (size_t j = 0; j < targetBatch.shape()[1]; ++j) {
+                    float val = targetBatch(r, j);
+                    if (useTargetNorm && tMin.size() > (size_t)j) {
+                        float range = tMax(0, j) - tMin(0, j);
+                        val = (val - tMin(0, j)) / (std::abs(range) < 1e-7f ? 1.0f : range);
+                    }
+                    file << val << (j == targetBatch.shape()[1] - 1 ? "" : std::string(1, delim));
+                }
+            }
+            file << "\n";
+            globalRowIdx++;
+        }
+        file.close();
+    }
+
     owTensor<float, 2> backward(const owTensor<float, 2>& outputGradient) override {
-        // Transparent pass-through for gradients
         return outputGradient;
     }
 
