@@ -19,7 +19,7 @@
 
 OpenWhiz is engineered for scenarios where "good enough" is not an option. While standard deep learning frameworks often struggle with convergence noise in regression tasks, OpenWhiz provides **unmatched mathematical precision** through its second-order optimization engine.
 
-*   **L-BFGS & Conjugate Gradient:** Unlike first-order optimizers (like SGD or Adam) that only see the slope, our L-BFGS implementation utilizes curvature information to find the global minimum with surgical accuracy.
+*   **BFGS & Conjugate Gradient:** Unlike first-order optimizers (like SGD or Adam) that only see the slope, our BFGS implementation utilizes curvature information to find the global minimum with surgical accuracy.
 *   **Sub-0.1% Error Rates:** Achieve extreme precision in complex time-series and physical simulations. In benchmarks like the CAC-40 forecast, OpenWhiz consistently delivers error rates lower than **1/1000 (0.1%)**.
 *   **Scientific-Grade Modeling:** Ideal for industrial digital twins, structural engineering simulations, and high-frequency financial modeling where every decimal point matters.
 *   **Deterministic Convergence:** Faster, more stable, and highly predictable convergence paths compared to stochastic methods.
@@ -69,7 +69,7 @@ OpenWhiz is structured into several modular components:
 
 *   **Core:** High-performance `owTensor` engine and `owNeuralNetwork` manager.
 *   **Layers:** From standard `Linear` and `LSTMLayer` to specialized `owSlidingWindowLayer` and `owCacheLayer`.
-*   **Optimizers:** First-order (SGD, Adam) and second-order (L-BFGS, Conjugate Gradient) methods.
+*   **Optimizers:** First-order (SGD, Adam) and second-order (BFGS, Conjugate Gradient) methods.
 *   **Data:** `owDataset` for CSV handling, automated normalization, and statistical profiling.
 *   **Activations & Losses:** A wide range of non-linearities (ReLU, Tanh, Sigmoid) and loss functions (MSE, Huber, Cross-Entropy).
 
@@ -120,7 +120,7 @@ int main() {
     nn.addLayer(std::make_shared<ow::owLinearLayer>(16, 1));
 
     // 4. Train & Predict
-    nn.setOptimizer(std::make_shared<ow::owLBFGSOptimizer>());
+    nn.setOptimizer(std::make_shared<ow::owBFGSOptimizer>());
     nn.train();
 
     auto prediction = nn.predict(); // Pipeline handles inverse normalization!
