@@ -236,11 +236,13 @@ public:
         m_sampleTypes.assign(rows, SampleType::Training);
         shuffleSampleTypes();
         m_autoNormalizeEnabled = autoNormalize;
+        m_isNormalized = autoNormalize;
         if (m_autoNormalizeEnabled) normalizeData();
         return true;
     }
 
-    void setAutoNormalizeEnabled(bool enable) { m_autoNormalizeEnabled = enable; }
+    void setAutoNormalizeEnabled(bool enable) { m_autoNormalizeEnabled = enable; m_isNormalized = enable; }
+    bool isNormalized() const { return m_isNormalized; }
     void setTargetVariableNum(int num) { m_targetVariableNum = num; }
     int getTargetVariableNum() const { return m_targetVariableNum; }
 
@@ -353,6 +355,7 @@ public:
             }
         }
         m_autoNormalizeEnabled = false; 
+        m_isNormalized = true;
     }
 
     void inverseNormalize(owTensor<float, 2>& data, int targetVarIdx = 0) {
@@ -469,6 +472,30 @@ public:
     owTensor<float, 2> getTestInput() const { return getRowsAndColsFiltered(SampleType::Test, true); }
     owTensor<float, 2> getTestTarget() const { return getRowsAndColsFiltered(SampleType::Test, false); }
 
+    owTensor<float, 2> getAllInput() const { return getFullDataFiltered(true); }
+    owTensor<float, 2> getAllTarget() const { return getFullDataFiltered(false); }
+
+    owTensor<float, 2> getFullDataFiltered(bool isInput) const {
+        std::vector<int> colIndices = getUsedColumnIndices(!isInput);
+        size_t rows = m_fullData.shape()[0];
+        owTensor<float, 2> res(rows, colIndices.size());
+        for (size_t i = 0; i < rows; ++i) {
+            for (size_t j = 0; j < colIndices.size(); ++j) {
+                int colIdx = colIndices[j];
+                float val = m_fullData(i, (size_t)colIdx);
+                if (m_autoNormalizeEnabled && m_columns[colIdx].usage == ColumnUsage::USED) {
+                    float minV = m_columns[colIdx].min;
+                    float maxV = m_columns[colIdx].max;
+                    float range = maxV - minV;
+                    if (range == 0) range = 1.0f;
+                    val = (val - minV) / range;
+                }
+                res(i, j) = val;
+            }
+        }
+        return res;
+    }
+
     void setRatios(float train, float val, float test, bool shuffle = true) {
         m_trainRatio = train; m_valRatio = val; m_testRatio = test;
         shuffleSampleTypes(shuffle);
@@ -559,6 +586,7 @@ private:
     float m_trainRatio = 0.6f, m_valRatio = 0.2f, m_testRatio = 0.2f;
     char m_delimiter = ';'; 
     bool m_autoNormalizeEnabled = false;
+    bool m_isNormalized = false;
     std::mt19937 m_rng;
 
     float parseValue(const std::string& val, ColumnInfo& info) {
