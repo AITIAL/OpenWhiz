@@ -61,6 +61,7 @@ struct EvaluationReport {
     float rSquared = 0.0f;     ///< Proportion of variance explained (Regression).
     float rmse = 0.0f;         ///< Root Mean Square Error (Regression).
     float mape = 0.0f;         ///< Mean Absolute Percentage Error (Regression).
+    float realScaleMape = 0.0f; ///< MAPE calculated on de-normalized values.
     bool isClassification = false; ///< Flag indicating the nature of the task.
 };
 
