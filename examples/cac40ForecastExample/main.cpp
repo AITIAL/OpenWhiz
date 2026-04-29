@@ -41,50 +41,75 @@ int main() {
     int windowSize = 5;
     dataset->prepareForecastData(windowSize);
 
-    // --- EXPORT FOR COMPARISON ---
-    dataset->saveToCSV("cachedataset_traditional.csv", "Date");
-    std::cout << "Exported traditional dataset to cachedataset_traditional.csv" << std::endl;
-
     // --- 2. ARCHITECTURE ---
     ow::owNeuralNetwork nn;
     nn.setDataset(dataset);
-    
-    // Create standard architecture: {64, 32, 1} with ReLU hidden and Identity output
-    nn.createNeuralNetwork(ow::owProjectType::FORECASTING, {64, 32});
 
-    nn.setOptimizer(std::make_shared<ow::owLBFGSOptimizer>(0.1f));
+    // High-Precision Architecture
+    auto layer1 = std::make_shared<ow::owLinearLayer>(nn.getDataset()->getInputVariableNum(), 32);
+    layer1->setActivationByName("LeakyReLU");
+    nn.addLayer(layer1);
+
+    auto layer2 = std::make_shared<ow::owLinearLayer>(32, 16);
+    layer2->setActivationByName("LeakyReLU");
+    nn.addLayer(layer2);
+
+    auto layer3 = std::make_shared<ow::owLinearLayer>(16, 1);
+    layer3->setActivationByName("Identity");
+    nn.addLayer(layer3);
+
+    nn.setOptimizer(std::make_shared<ow::owBFGSOptimizer>(1.0f));
     nn.setLoss(std::make_shared<ow::owMeanSquaredErrorLoss>());
-    nn.setMaximumEpochNum(1000);
-    nn.setMinimumPercentageError(0.0001f); // Effectively disable stopping
-    nn.setLossStagnationTolerance(0.0f);   // Force training through every epoch
-    nn.setPrintEpochInterval(5);
+    nn.setMaximumEpochNum(3000);
+    nn.setMinimumPercentageError(0.0001f);
+    nn.setLossStagnationTolerance(1e-15f);  // Extremely tight tolerance
+    nn.setLossStagnationPatience(200);     // Give it more time to escape plateaus
+    nn.setPrintEpochInterval(10);
 
     // --- 3. TRAINING ---
     std::cout << "Training..." << std::endl;
     nn.train();
 
     // --- 4. EVALUATION ---
-    std::cout << "\n--- Last 5 Samples Comparison ---" << std::endl;
-    std::cout << std::setw(15) << "Actual" << std::setw(15) << "Predicted" << std::setw(15) << "Error" << std::endl;
-    std::cout << "-------------------------------------------------------------" << std::endl;
+    std::cout << "\n--- Last 5 Chronological Samples Comparison ---" << std::endl;
+    std::cout << std::setw(15) << "Actual" << std::setw(15) << "Predicted" << std::setw(15) << "Error" << std::setw(15) << "Type" << std::endl;
+    std::cout << "----------------------------------------------------------------------------" << std::endl;
 
     nn.reset();
-    auto testIn = dataset->getTestInput();
-    auto testOut = dataset->getTestTarget();
     
-    // Predict and inverse normalize: y_raw = y_norm * (max - min) + min
-    auto pred = nn.forward(testIn);
-    dataset->inverseNormalize(pred);
-    dataset->inverseNormalize(testOut);
+    // Get ALL data to pick the last 5 chronological rows
+    auto allIn = dataset->getAllInput();
+    auto allOut = dataset->getAllTarget();
+    
+    size_t totalRows = allIn.shape()[0];
+    size_t startRow = totalRows - 5;
 
-    size_t rows = testIn.shape()[0];
-    for (size_t i = rows - 5; i < rows; ++i) {
-        float actual = testOut(i, 0);
+    // Create a mini-batch for the last 5 samples
+    ow::owTensor<float, 2> last5In(5, allIn.shape()[1]);
+    ow::owTensor<float, 2> last5Out(5, 1);
+
+    for (size_t i = 0; i < 5; ++i) {
+        for (size_t j = 0; j < allIn.shape()[1]; ++j) {
+            last5In(i, j) = allIn(startRow + i, j);
+        }
+        last5Out(i, 0) = allOut(startRow + i, 0);
+    }
+    
+    // Predict and inverse normalize
+    auto pred = nn.forward(last5In);
+    dataset->inverseNormalize(pred);
+    dataset->inverseNormalize(last5Out);
+
+    for (size_t i = 0; i < 5; ++i) {
+        float actual = last5Out(i, 0);
         float predicted = pred(i, 0);
+        std::string sampleType = dataset->getSampleTypeString(startRow + i);
+
         std::cout << std::fixed << std::setprecision(2) 
                   << std::setw(15) << actual 
                   << std::setw(15) << predicted 
-                  << std::setw(15) << std::abs(actual - predicted) << std::endl;
+                  << std::setw(15) << std::abs(actual - predicted)
+                  << std::setw(15) << sampleType << std::endl;
     }
 
     return 0;
