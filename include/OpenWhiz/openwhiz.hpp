@@ -61,6 +61,7 @@
 #include "optimizers/owADAMOptimizer.hpp"
 #include "optimizers/owConjugateGradientOptimizer.hpp"
 #include "optimizers/owGradientDescentOptimizer.hpp"
+#include "optimizers/owBFGSOptimizer.hpp"
 #include "optimizers/owLBFGSOptimizer.hpp"
 #include "optimizers/owMomentumOptimizer.hpp"
 #include "optimizers/owRMSPropOptimizer.hpp"
