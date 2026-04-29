@@ -545,19 +545,22 @@ inline void owNeuralNetwork::train() {
 
     if (m_enablePrinting) {
         auto trainReport = evaluatePerformance(m_dataset->getTrainInput(), m_dataset->getTrainTarget());
-        float trainMAPE = trainReport.mape;
-
-        float valMAPE = 0.0f;
+        float trainMAPE = (trainReport.realScaleMape > 0.0f) ? trainReport.realScaleMape : trainReport.mape;
+        
+        float vMAPE = 0.0f;
         auto vIn = m_dataset->getValInput();
         if (vIn.shape()[0] > 0) {
             auto valReport = evaluatePerformance(vIn, m_dataset->getValTarget());
-            valMAPE = valReport.mape;
+            vMAPE = (valReport.realScaleMape > 0.0f) ? valReport.realScaleMape : valReport.mape;
         }
 
         std::cout << "\n--- Training Summary ---" << std::endl;
         std::cout << "Finish Reason: " << m_finishReason << std::endl;
         std::cout << "Avg. Train Loss: " << std::fixed << std::setprecision(2) << trainMAPE << "% (MAPE)" << std::endl;
-        if (vIn.shape()[0] > 0) std::cout << "Avg. Val Loss: " << std::fixed << std::setprecision(2) << valMAPE << "% (MAPE)" << std::endl;
+
+        if (vIn.shape()[0] > 0) {
+            std::cout << "Avg. Val Loss: " << std::fixed << std::setprecision(2) << vMAPE << "% (MAPE)" << std::endl;
+        }
         std::cout << "Total Time: ";
         if (m_actualTrainingTime < 60.0) {
             std::cout << std::fixed << std::setprecision(2) << m_actualTrainingTime << "s" << std::endl;
@@ -752,11 +755,24 @@ inline EvaluationReport owNeuralNetwork::evaluatePerformance(const owTensor<floa
     EvaluationReport report;
     setTraining(false); // Ensure we are in evaluation mode
     reset(); // Clear state for evaluation
+    
     auto pred = forward(input);
     size_t n = input.shape()[0];
     size_t outDim = target.shape()[1];
     float mse = 0, mape = 0;
     int correct = 0;
+    
+    // Real scale MAPE calculation
+    float realMape = 0.0f;
+    bool canInverse = m_dataset && m_dataset->isNormalized();
+    
+    auto realPred = pred;
+    auto realTarget = target;
+    if (canInverse) {
+        m_dataset->inverseNormalize(realPred);
+        m_dataset->inverseNormalize(realTarget);
+    }
+
     for (size_t i = 0; i < n; ++i) {
         bool rowCorrect = true;
         for (size_t j = 0; j < outDim; ++j) {
@@ -764,6 +780,12 @@ inline EvaluationReport owNeuralNetwork::evaluatePerformance(const owTensor<floa
             mse += diff * diff;
             if (std::abs(t) > 1e-7f) mape += std::abs(diff / t);
             
+            // Real scale calculation
+            if (canInverse) {
+                float rp = realPred(i, j), rt = realTarget(i, j);
+                if (std::abs(rt) > 1e-7f) realMape += std::abs((rp - rt) / rt);
+            }
+
             // Fix: If target is 0, use tolerance as an absolute threshold.
             // Otherwise, use it as a percentage of the target.
             float threshold = (std::abs(t) < 1e-7f) ? tolerance : std::abs(t * tolerance);
@@ -773,6 +795,7 @@ inline EvaluationReport owNeuralNetwork::evaluatePerformance(const owTensor<floa
     }
     report.rmse = std::sqrt(mse / (n * outDim));
     report.mape = (mape / (n * outDim)) * 100.0f;
+    report.realScaleMape = (realMape / (n * outDim)) * 100.0f;
     report.accuracy = (float)correct / n;
     return report;
 }
