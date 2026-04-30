@@ -8,6 +8,7 @@
 #pragma once
 #include "owLayer.hpp"
 #include "../core/owNeuralNetwork.hpp"
+#include "../data/owDataset.hpp"
 #include <vector>
 #include <numeric>
 #include <algorithm>
@@ -20,11 +21,22 @@ namespace ow {
 /**
  * @class owCacheLayer
  * @brief Performance optimizer that records pre-processed data for the ENTIRE dataset.
+ * 
+ * This layer is designed to be placed after non-trainable preprocessing layers 
+ * (like Normalization or Sliding Window). During the first pass, it records the outputs. 
+ * In subsequent passes, it returns the cached tensors, bypassing the calculation 
+ * of previous layers and significantly speeding up training.
+ * 
+ * **Unique Features:**
+ * - **Subset Awareness:** Automatically detects if it's being asked for Training, 
+ *   Validation, or Test subsets and filters its cache accordingly.
+ * - **Smart Shuffling:** If enabled, it shuffles the Training subset to improve 
+ *   generalization without losing alignment with targets.
  */
 class owCacheLayer : public owLayer {
 public:
     owCacheLayer(bool shuffle = true) 
-        : m_shuffleEnabled(shuffle), m_isFull(false), m_playbackMode(false), m_currentBatchIdx(0) {
+        : m_shuffleEnabled(shuffle), m_isFull(false), m_playbackMode(false) {
         m_layerName = "Cache Layer";
     }
 
@@ -33,8 +45,13 @@ public:
     void setInputSize(size_t size) override { m_inputDim = size; }
     void setNeuronNum(size_t num) override { m_inputDim = num; }
 
+    /**
+     * @brief Resets the playback indices. If shuffling is enabled, it re-shuffles the training set.
+     */
     void reset() override {
-        m_currentBatchIdx = 0;
+        if (m_isFull && m_shuffleEnabled && m_isTraining) {
+            std::shuffle(m_trainingIndices.begin(), m_trainingIndices.end(), m_rng);
+        }
     }
 
     std::shared_ptr<owLayer> clone() const override {
@@ -45,8 +62,15 @@ public:
         return copy;
     }
 
+    /**
+     * @brief Core logic for recording and playback.
+     * 
+     * Handles recording of full dataset and subsequent playback of subsets.
+     * Correctly handles row filtering to prevent dimension mismatches in optimizers.
+     */
     owTensor<float, 2> forward(const owTensor<float, 2>& input) override {
         if (!m_isFull && m_isTraining) {
+            // Recording Pass (typically one forward pass with the entire dataset)
             if (m_cachedInputs.size() > 0 && input.shape()[0] > m_cachedInputs[0].shape()[0]) {
                 m_cachedInputs.clear();
                 m_cachedTargets.clear();
@@ -54,27 +78,76 @@ public:
             m_cachedInputs.push_back(input);
             if (m_localTarget) m_cachedTargets.push_back(*m_localTarget); 
             m_inputDim = input.shape()[1];
+            // std::cout << "CacheLayer: Recorded " << input.shape()[0] << " rows." << std::endl;
             return input;
         } else if (m_playbackMode) {
             if (m_cachedInputs.empty()) return input;
-            const auto& fullCache = m_cachedInputs[0];
-            return fullCache; 
+            
+            const auto& fullIn = m_cachedInputs[0];
+            const auto& fullOut = m_cachedTargets.empty() ? owTensor<float, 2>() : m_cachedTargets[0];
+            size_t inputRows = input.shape()[0];
+            size_t totalRows = fullIn.shape()[0];
+
+            // 1. Full Dataset Playback
+            if (inputRows == totalRows) {
+                m_activeTarget = fullOut;
+                return fullIn;
+            }
+
+            // 2. Subset Playback (Training / Validation / Test)
+            std::vector<size_t>* targetIndices = nullptr;
+            if (inputRows == m_trainingIndices.size()) targetIndices = &m_trainingIndices;
+            else if (inputRows == m_validationIndices.size()) targetIndices = &m_validationIndices;
+            else if (inputRows == m_testIndices.size()) targetIndices = &m_testIndices;
+
+            if (targetIndices) {
+                owTensor<float, 2> subsetIn(inputRows, fullIn.shape()[1]);
+                owTensor<float, 2> subsetOut(inputRows, fullOut.shape()[1]);
+                
+                for (size_t i = 0; i < inputRows; ++i) {
+                    size_t idx = (*targetIndices)[i];
+                    if (idx >= totalRows) continue; // Safety
+                    for (size_t j = 0; j < fullIn.shape()[1]; ++j) subsetIn(i, j) = fullIn(idx, j);
+                    if (fullOut.size() > 0) {
+                        for (size_t j = 0; j < fullOut.shape()[1]; ++j) subsetOut(i, j) = fullOut(idx, j);
+                    }
+                }
+                m_activeTarget = subsetOut;
+                return subsetIn;
+            }
+
+            return input; 
         }
         return input;
     }
 
-    const owTensor<float, 2>& getActiveTarget() const {
-        if (!m_isFull || m_cachedTargets.empty()) {
-            static owTensor<float, 2> empty;
-            return empty;
-        }
-        return m_cachedTargets[0];
+    const owTensor<float, 2>& getActiveTarget() const override {
+        return m_activeTarget;
     }
 
+    /**
+     * @brief Transitions the layer from recording to playback.
+     * Pre-calculates indices for Training, Validation, and Test subsets.
+     */
     void lockCache() override {
         if (m_cachedInputs.empty()) return;
         m_isFull = true;
         m_playbackMode = true; 
+
+        if (m_parentNetwork && m_parentNetwork->getDataset()) {
+            auto* ds = m_parentNetwork->getDataset();
+            const auto& types = ds->getSampleTypes();
+            
+            m_trainingIndices.clear();
+            m_validationIndices.clear();
+            m_testIndices.clear();
+
+            for (size_t i = 0; i < types.size(); ++i) {
+                if (types[i] == SampleType::Training) m_trainingIndices.push_back(i);
+                else if (types[i] == SampleType::Validation) m_validationIndices.push_back(i);
+                else if (types[i] == SampleType::Test) m_testIndices.push_back(i);
+            }
+        }
     }
 
     void setPlaybackMode(bool enabled) override {
@@ -208,7 +281,7 @@ public:
         m_shuffleEnabled = std::stoi(getTagContent(xml, "ShuffleEnabled")) != 0;
     }
 
-    bool isFull() const { return m_isFull; }
+    bool isFull() const override { return m_isFull; }
     void setFull(bool full) { m_isFull = full; }
 
 private:
@@ -219,8 +292,12 @@ private:
     
     std::vector<owTensor<float, 2>> m_cachedInputs;
     std::vector<owTensor<float, 2>> m_cachedTargets;
-    std::vector<size_t> m_indices;
-    size_t m_currentBatchIdx;
+    
+    std::vector<size_t> m_trainingIndices;
+    std::vector<size_t> m_validationIndices;
+    std::vector<size_t> m_testIndices;
+
+    owTensor<float, 2> m_activeTarget;
 
     std::mt19937 m_rng{std::random_device{}()};
 };

@@ -117,10 +117,11 @@ public:
                 firstPass = false;
             }
 
-            float loss = nn->calculateLoss(pred, trainTarget);
+            const auto& activeTarget = nn->getActiveTarget(trainTarget);
+            float loss = nn->calculateLoss(pred, activeTarget);
             nn->reset(); // Clear state again before backward to ensure it uses fresh forward path
             nn->forward(trainIn); // Re-run forward to populate state for backward pass
-            nn->backward(pred, trainTarget);
+            nn->backward(pred, activeTarget);
             nn->getGlobalGradients(g_f);
             for(size_t i=0; i<nParams; ++i) cur_g[i] = (double)g_f.data()[i];
             return (double)loss;
@@ -241,10 +242,11 @@ public:
                 float currentMape = 0.0f;
                 // Compute current predictions to get MAPE
                 auto pred = nn->forward(trainIn);
+                const auto& activeTarget = nn->getActiveTarget(trainTarget);
                 size_t n = pred.shape()[0], outDim = pred.shape()[1];
                 for (size_t i = 0; i < n; ++i) {
                     for (size_t j = 0; j < outDim; ++j) {
-                        float p = pred(i, j), t = trainTarget(i, j);
+                        float p = pred(i, j), t = activeTarget(i, j);
                         if (std::abs(t) > 1e-7f) currentMape += std::abs((p - t) / t);
                     }
                 }

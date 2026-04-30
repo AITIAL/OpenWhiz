@@ -186,6 +186,15 @@ inline float owNeuralNetwork::calculateLoss(const owTensor<float, 2>& prediction
     return m_loss ? m_loss->compute(prediction, target) : 0.0f;
 }
 
+inline const owTensor<float, 2>& owNeuralNetwork::getActiveTarget(const owTensor<float, 2>& defaultTarget) const {
+    for (const auto& layer : m_layers) {
+        if (layer->isFull()) {
+            return layer->getActiveTarget();
+        }
+    }
+    return defaultTarget;
+}
+
 inline owTensor<std::string, 1> owNeuralNetwork::getLayerNames() const {
     owTensor<std::string, 1> res(m_layers.size());
     for (size_t i = 0; i < m_layers.size(); ++i) {
@@ -514,6 +523,12 @@ inline void owNeuralNetwork::train() {
         std::vector<int> inputIndices = m_dataset->getUsedColumnIndices(false);
         std::vector<int> targetIndices = m_dataset->getUsedColumnIndices(true);
         
+        // No-Prep Forecasting support: if no specific input columns are defined,
+        // use target columns as inputs (common in time-series layers like SlidingWindow)
+        if (inputIndices.empty()) inputIndices = targetIndices;
+
+        if (inputIndices.empty()) return; // Safety: still no inputs found
+
         owTensor<float, 2> fullIn(fullData.shape()[0], inputIndices.size());
         owTensor<float, 2> fullTarget(fullData.shape()[0], targetIndices.size());
         
@@ -522,11 +537,11 @@ inline void owNeuralNetwork::train() {
             for (size_t j = 0; j < targetIndices.size(); ++j) fullTarget(i, j) = fullData(i, (size_t)targetIndices[j]);
         }
 
-        reset(); // Clear sliding window buffers etc.
+        reset(); 
         for (auto& l : m_layers) l->setTarget(&fullTarget);
         forward(fullIn);
         for (auto& l : m_layers) l->lockCache();
-        reset(); // Reset again for actual training
+        reset(); 
     }
 
     if (m_optimizer->supportsGlobalOptimization()) {

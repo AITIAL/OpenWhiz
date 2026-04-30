@@ -108,19 +108,6 @@ public:
     /** @brief Resets any internal state (useful for recurrent or stateful layers). */
     virtual void reset() {}
 
-    /** 
-     * @brief Signals that the first recording epoch is finished.
-     * Stateful layers like CacheLayer will lock their buffers and switch to Playback mode.
-     * This call is propagated recursively through hierarchical layers (Sequential, Concatenate).
-     */
-    virtual void lockCache() {}
-
-    /** 
-     * @brief Toggles between active playback (training) and transparent pass-through (inference). 
-     * @param enabled If true, CacheLayer returns stored values. If false, it acts as an identity layer.
-     */
-    virtual void setPlaybackMode(bool /*enabled*/) {}
-
     /** @return XML representation of the layer's configuration and parameters. */
     virtual std::string toXML() const = 0;
 
@@ -289,6 +276,21 @@ public:
 
     /** @return True if the layer is currently in training mode. */
     bool isTraining() const { return m_isTraining; }
+
+    /** @brief Transitions the layer from recording to playback (for caching). */
+    virtual void lockCache() {}
+
+    /** @brief Toggles playback mode for caching layers. */
+    virtual void setPlaybackMode(bool /*enabled*/) {}
+
+    /** @return True if the cache is fully populated. */
+    virtual bool isFull() const { return false; }
+
+    /** @return The current target tensor associated with the cached data. */
+    virtual const owTensor<float, 2>& getActiveTarget() const {
+        static owTensor<float, 2> empty;
+        return empty;
+    }
 
 protected:
     std::string m_layerName = "Base Layer";
