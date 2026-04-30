@@ -401,6 +401,13 @@ public:
     float calculateLoss(const owTensor<float, 2>& prediction, const owTensor<float, 2>& target);
 
     /**
+     * @brief Detects if a cache is active and returns the corresponding target tensor.
+     * @param defaultTarget The target tensor to use if no cache is active.
+     * @return Reference to the active target tensor.
+     */
+    const owTensor<float, 2>& getActiveTarget(const owTensor<float, 2>& defaultTarget) const;
+
+    /**
      * @brief Updates internal parameters for all layers based on gradients.
      */
     void trainStep();

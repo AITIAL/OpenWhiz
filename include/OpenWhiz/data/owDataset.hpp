@@ -293,11 +293,11 @@ public:
         int inputColsBoundary = (int)m_columns.size() - m_targetVariableNum;
 
         if (!includeTarget) {
-            for (int i = 0; i < inputColsBoundary; ++i) {
+            for (int i = 0; i < (int)m_columns.size(); ++i) {
                 if (m_columns[i].usage == ColumnUsage::USED) indices.push_back(i);
             }
         } else {
-            for (int i = inputColsBoundary; i < (int)m_columns.size(); ++i) {
+            for (int i = (inputColsBoundary > 0 ? inputColsBoundary : 0); i < (int)m_columns.size(); ++i) {
                 indices.push_back(i);
             }
         }
@@ -309,6 +309,7 @@ public:
     }
 
     size_t getSampleNum() const { return m_fullData.shape()[0]; }
+    const std::vector<SampleType>& getSampleTypes() const { return m_sampleTypes; }
     owTensor<float, 2> getData() const { return m_fullData; }
 
     /** @return The original name of the column at the specified index. */
