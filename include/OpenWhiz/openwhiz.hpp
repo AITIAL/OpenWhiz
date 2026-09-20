@@ -76,6 +76,8 @@
 #include "losses/owMeanSquaredErrorLoss.hpp"
 #include "losses/owPinballLoss.hpp"
 #include "losses/owWeightedMeanSquaredErrorLoss.hpp"
+#include "losses/owWeightedBinaryCrossEntropyLoss.hpp"
+#include "losses/owWeightedCategoricalCrossEntropyLoss.hpp"
 
 // Layers (Full implementations - depends on Optimizer/Loss/Activation)
 #include "layers/owAdditionLayer.hpp"
@@ -107,6 +109,24 @@
 #include "layers/owSlidingWindowLayer.hpp"
 #include "layers/owSlidingWindowViewLayer.hpp"
 #include "layers/owCacheLayer.hpp"
+
+// Text processing (tokenization, stemming, language detection, embeddings,
+// sentiment, clustering) - depends on the layers/losses/optimizers above
+#include "text/owLanguage.hpp"
+#include "text/owTextTokenizer.hpp"
+#include "text/owLanguageDetector.hpp"
+#include "text/stemmers/owStemmer.hpp"
+#include "text/stemmers/owTurkishStemmer.hpp"
+#include "text/stemmers/owFrenchStemmer.hpp"
+#include "text/stemmers/owEnglishStemmer.hpp"
+#include "text/owEmbeddingLookup.hpp"
+#include "text/owMultilingualEmbeddingLookup.hpp"
+#include "text/owWordVectorPruner.hpp"
+#include "text/owVocabularyExtractor.hpp"
+#include "text/owSentimentPreset.hpp"
+#include "text/owSentimentLexicon.hpp"
+#include "text/owClusterLabeler.hpp"
+#include "text/owTfIdfVectorizer.hpp"
 
 // Implementation of owNeuralNetwork inline methods (must be last)
 #include "core/owNeuralNetwork.inl"

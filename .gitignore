@@ -5,3 +5,7 @@
 *.project
 *.cproject
 /tests/
+
+# Runtime-generated word-vector tables + training CSVs these examples write
+# into their own directory on every run - not source data.
+examples/**/*.vec*
